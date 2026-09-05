@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#14251f">
+  <title>風のゆくえ — THE VERDANT WILDS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600&family=Noto+Serif+JP:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/expansion.css">
+</head>
+<body>
+  <canvas id="world" aria-label="草原の3Dオープンワールド。左のスティックで移動、画面右側をドラッグして視点操作。"></canvas>
+  <div class="vignette"></div>
+  <svg class="svg-library" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M19 3C9 2 3 7 5 14c2 7 13 5 14-11Z M4 21 15 8 M8 16l-1-5m5 1 5-1"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5Z M12 1v3m0 16v3M1 12h3m16 0h3"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24"><path d="m11 5-5 4H3v6h3l5 4Z M15 8c3 2 3 6 0 8m3-11c5 4 5 10 0 14"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m6 0h6v-6"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></symbol>
+    <symbol id="i-walk" viewBox="0 0 24 24"><circle cx="14" cy="4" r="2"/><path d="m7 11 4-3 4 2 3 4m-7-6-2 7-4 6m4-6 5 2 1 5"/></symbol>
+    <symbol id="i-jump" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6M5 21h14"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 5 6-2 6 3 6-2v15l-6 2-6-3-6 2Zm6-2v15m6-12v15"/></symbol>
+    <symbol id="i-sword" viewBox="0 0 24 24"><path d="m4 20 5-5m-3-3 6 6M9 12 18 3l3 0v3l-9 9M3 18l3 3"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24"><path d="m4 10 2-5h12l2 5M3 10h18v8H3Zm2 8v3m14-3v3M6 13h3m6 0h3"/></symbol>
+    <symbol id="i-plane" viewBox="0 0 24 24"><path d="M12 2v19m-8-6 8-6 8 6v2l-8-3-8 3Zm5 6 3-3 3 3"/></symbol>
+    <symbol id="i-storm" viewBox="0 0 24 24"><path d="M7 15H5a4 4 0 0 1-1-8 6 6 0 0 1 11-2 5 5 0 0 1 5 10h-4M12 11l-4 7h5l-3 5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Zm0 4v10m-4-5h8"/></symbol>
+  </defs></svg>
+  <div id="loading"><div class="loading-emblem">✧</div><p>風のゆくえ</p><small>草原が、目を覚ます。</small><div class="loading-track"><span></span></div></div>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="風のゆくえ ホーム"><span class="brand-mark"><svg><use href="#i-leaf"/></svg></span><span><strong>風のゆくえ</strong><small>THE VERDANT WILDS</small></span></a>
+    <div class="compass" aria-label="方角"><div class="compass-ticks"></div><div class="compass-labels"><span id="compass-left">NW</span><span id="compass-main">N</span><span id="compass-right">NE</span></div><span class="compass-pin">◆</span></div>
+    <nav class="tools" aria-label="ゲーム設定"><span class="live-label"><i></i> WILDFRONT UPDATE</span><button id="events-button" class="icon-button" title="イベントと乗り物" aria-label="イベントと乗り物"><svg><use href="#i-storm"/></svg></button><button id="sound-button" class="icon-button muted" title="環境音をオン" aria-label="環境音を切り替え"><svg><use href="#i-sound"/></svg></button><button id="fullscreen-button" class="icon-button" title="全画面" aria-label="全画面"><svg><use href="#i-expand"/></svg></button><button id="settings-button" class="icon-button" title="設定" aria-label="設定"><svg><use href="#i-settings"/></svg></button></nav>
+  </header>
+  <main id="game-hud">
+    <aside class="journey-panel"><div class="eyebrow"><span class="gold-line"></span> YOUR JOURNEY</div><h1>まだ見ぬ、風の先へ。</h1><p class="journey-description">大地を駆け、空を翔け、脅威に立ち向かう。</p><div class="quest"><span class="quest-symbol">◇</span><div><small>最初の道しるべ</small><h2 id="quest-title">風渡りの古塔を見つける</h2><p><span id="quest-distance">—</span><span class="quest-divider">/</span><span id="quest-progress">0 / 3 の記憶</span></p></div></div><button id="guide-button" class="text-button">旅の手引き <span>↗</span></button></aside>
+    <div id="landmark-marker" class="landmark-marker"><span>◇</span><small id="marker-label">風渡りの古塔</small><em id="marker-distance"></em></div>
+    <div id="discovery-toast" class="discovery-toast" role="status"><span>MEMORY DISCOVERED</span><h2 id="discovery-name"></h2><p>この風景を、旅の記憶に。</p></div>
+    <div class="region-label"><span class="region-rule"></span><div class="eyebrow">THE WHISPERING MEADOWS</div><h2>ささやきの草原</h2><div class="region-meta"><svg><use href="#i-sun"/></svg><span id="world-time">16:24</span><i></i><span id="weather-description">晴れ、穏やかな風</span></div></div>
+    <div class="movement-control"><div id="joystick" aria-label="移動スティック"><span class="joystick-n">⌃</span><span class="joystick-s">⌄</span><span class="joystick-w">‹</span><span class="joystick-e">›</span><div id="joystick-knob"><span></span></div></div><span class="control-caption">移動 <span class="desktop-only">W A S D</span></span></div>
+    <div class="bottom-center"><span class="wind-icon">≋</span><span id="ambient-caption">深呼吸をして、歩き出そう。</span><small>右側をドラッグして見渡す <span class="desktop-only">· SHIFT で走る</span></small></div>
+    <aside class="right-hud"><button id="map-button" class="minimap" aria-label="探索マップを開く"><canvas id="minimap" width="280" height="280"></canvas><span class="minimap-n">N</span><span class="map-expand"><svg><use href="#i-map"/></svg></span></button><div class="map-coordinates" id="map-coordinates">E 0000 · N 0000</div><div class="action-buttons"><button id="attack-button" class="action-button attack" aria-label="攻撃 J"><svg><use href="#i-sword"/></svg><span>攻撃</span></button><button id="interact-button" class="action-button" aria-label="乗る・降りる E"><svg><use href="#i-car"/></svg><span id="interact-label">乗る</span></button><button id="dodge-button" class="action-button" aria-label="回避 F"><svg><use href="#i-shield"/></svg><span>回避</span></button><button id="run-button" class="action-button" aria-label="走る（切り替え）"><svg><use href="#i-walk"/></svg><span>走る</span></button><button id="jump-button" class="action-button jump" aria-label="ジャンプ"><svg><use href="#i-jump"/></svg><span id="jump-label">ジャンプ</span></button><button id="heal-button" class="action-button" aria-label="回復 R"><span class="heal-cross">＋</span><span id="heal-label">回復 3</span></button></div></aside>
+    <section class="vitals" aria-label="プレイヤーの状態"><div class="vitals-heading"><span>TRAVELLER</span><strong id="hp-value">100 / 100</strong></div><div class="health-track"><i id="hp-fill"></i></div><div class="vitals-sub"><span id="enemy-count">周辺の脅威 0</span><span id="kill-count">討伐 0</span></div></section>
+    <aside class="world-event"><span class="event-dot"></span><div><small id="weather-status">CLEAR SKIES</small><strong id="event-status">草原の巡回隊に注意</strong></div><button id="event-shortcut" aria-label="イベントを開く">↗</button></aside>
+    <section id="boss-hud" hidden><small>WORLD BOSS · STORMBOUND</small><div><h2>嵐喰らい、グロム</h2><span id="boss-phase">PHASE I</span></div><div class="boss-track"><i id="boss-fill"></i></div><p id="boss-hint">赤い予兆の外へ回避しよう</p></section>
+    <div id="entity-labels"></div><div id="combat-reticle"><i></i></div>
+    <div id="vehicle-dashboard" hidden><small id="vehicle-name">WAYFARER GT</small><strong><span id="vehicle-speed">0</span><em>km/h</em></strong><span id="vehicle-detail">全輪駆動</span><p id="vehicle-help">スティックで加速・操舵</p><button id="descend-button" aria-label="飛行機を降下">↓ 降下</button></div>
+    <div id="action-notice" role="status"></div>
+    <div class="status-footer"><span><i></i> <span id="game-mode-label">自由探索 · 戦闘対応</span></span><span>ULTRA <b>·</b> <span id="resolution-label">3D WORLD</span></span></div>
+  </main>
+  <div id="portrait-hint"><svg><use href="#i-expand"/></svg><span>スマホを横にすると、世界が広がります。</span><button aria-label="閉じる" id="dismiss-portrait">×</button></div>
+  <dialog id="settings-dialog"><button class="dialog-close" data-close aria-label="閉じる"><svg><use href="#i-close"/></svg></button><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2>旅の設定</h2><p>あなたに心地よい、草原の時間を。</p><label>描画解像度<select id="quality-select"><option value="2" selected>Ultra · 高解像度</option><option value="3">Extreme · 最大解像度</option><option value="1">Standard · 標準</option></select></label><label>時刻 <span id="time-label">夕暮れ前</span><input id="time-slider" type="range" min="0" max="1" step="0.01" value="0.62"></label><label>視点感度<input id="sensitivity-slider" type="range" min="0.4" max="2" step="0.1" value="1"></label><label class="check-label">画面の案内を表示<input id="hud-toggle" type="checkbox" checked></label><button class="primary-button" data-close>草原に戻る <span>→</span></button></dialog>
+  <dialog id="guide-dialog"><button class="dialog-close" data-close aria-label="閉じる"><svg><use href="#i-close"/></svg></button><span class="eyebrow">A LITTLE FIELD GUIDE</span><h2>急がなくて、いい。</h2><p>草原の3つの記憶を探しながら、車で大地を走り、飛行機で空へ。ゴブリンと人間の襲撃隊「クリーチャーズ」があなたを狙います。<br>右上の雷アイコンから天候・襲撃・ボスイベントを開始できます。</p><dl><dt>歩く</dt><dd>左のスティック / W A S D・矢印キー</dd><dt>見渡す</dt><dd>画面右側をドラッグ / マウスドラッグ</dd><dt>走る</dt><dd>「走る」をタップ / Shift</dd><dt>ジャンプ</dt><dd>矢印ボタン / Space</dd><dt>攻撃 / 回避</dt><dd>剣 / 盾ボタン・J / F（光弾は近い敵を狙う）</dd><dt>乗る / 降りる</dt><dd>車アイコン / E（近づいて乗る、停車して降りる）</dd><dt>車を運転</dt><dd>上下で加速・後退、左右で操舵。走るでブースト</dd><dt>飛行機</dt><dd>上で加速、左右で旋回。Space / 上昇で離陸、Q / 降下で着陸。地上で低速時のみ降りられます</dd><dt>回復</dt><dd>＋ボタン / R（3回。復帰時に補充）</dd><dt>記憶を集める</dt><dd>金色の光が立つ場所に近づく</dd></dl><p class="dialog-note">進行状況は、このブラウザーに自動保存されます。</p><button class="primary-button" data-close>風にまかせて <span>→</span></button></dialog>
+  <dialog id="map-dialog"><button class="dialog-close" data-close aria-label="閉じる"><svg><use href="#i-close"/></svg></button><span class="eyebrow">YOUR LITTLE ATLAS</span><h2>草原の旅の地図</h2><canvas id="large-map" width="700" height="550"></canvas><div id="map-legend"></div><p class="dialog-note">▲ 現在地　◇ 未発見の記憶　◆ 発見した記憶</p></dialog>
+  <dialog id="events-dialog"><button class="dialog-close" data-close aria-label="閉じる"><svg><use href="#i-close"/></svg></button><span class="eyebrow">THE WILDFRONT EXPANSION</span><h2>世界を、動かそう。</h2><p>イベントは探索中にも自動発生します。ここから好きなタイミングで開始することもできます。</p><h3 class="event-section-title">VEHICLES / 乗り物</h3><div class="event-grid"><button data-event="car"><svg><use href="#i-car"/></svg><strong>WAYFARER GT</strong><small>車を近くに配置</small></button><button data-event="plane"><svg><use href="#i-plane"/></svg><strong>KESTREL S-2</strong><small>飛行機を近くに配置</small></button></div><h3 class="event-section-title">WEATHER / 空の表情</h3><div class="weather-buttons"><button data-weather="clear">晴れ</button><button data-weather="rain">雨</button><button data-weather="storm">雷雨</button><button data-weather="fog">濃霧</button></div><label class="check-label">天候の自動変化<input id="auto-weather" type="checkbox" checked></label><h3 class="event-section-title">ENCOUNTERS / 脅威に挑む</h3><div class="event-grid"><button data-event="goblins"><span>◇</span><strong>ゴブリンの群れ</strong><small>6体の襲撃を開始</small></button><button data-event="creatures"><span>⚔</span><strong>クリーチャーズ</strong><small>人間8人の包囲襲撃</small></button><button class="boss-event-button" data-event="boss"><span>♜</span><strong>嵐喰らい、グロム</strong><small>雷雨とともに現れるワールドボス</small></button></div><p class="dialog-note">敵の攻撃を避けながら光弾で反撃。倒れると開始地点に復帰できます。車・飛行機はゲーム内の近くに実体として配置されます。</p></dialog>
+  <dialog id="defeat-dialog"><span class="eyebrow">THE JOURNEY IS NOT OVER</span><h2>風は、まだ吹いている。</h2><p>体力が尽きました。記憶と討伐の記録を残して、草原の拠点から旅を再開できます。</p><button id="respawn-button" class="primary-button">拠点で再起する <span>→</span></button></dialog>
+  <div id="damage-overlay"></div><div id="lightning-overlay"></div>
+  <div id="error-message" hidden><h2>草原を開けませんでした</h2><p>WebGL対応のブラウザーで再読み込みしてください。初回起動にはインターネット接続が必要です。</p><button onclick="location.reload()">再読み込み</button></div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script src="js/expansion.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
