@@ -1,0 +1,556 @@
+{
+  "base": "http://127.0.0.1:8000/",
+  "capturedAt": "2026-09-20T00:59:45.282Z",
+  "tests": [],
+  "captures": [
+    {
+      "file": "well-desktop.png",
+      "id": "well",
+      "name": "旅人の井戸 · 全景",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "well-detail-desktop.png",
+      "id": "well-detail",
+      "name": "旅人の井戸 · 細部",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "market-desktop.png",
+      "id": "market",
+      "name": "風の市 · 全景",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "market-detail-desktop.png",
+      "id": "market-detail",
+      "name": "風の市 · 細部",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "wagon-desktop.png",
+      "id": "wagon",
+      "name": "街道の幌馬車 · 全景",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "wagon-detail-desktop.png",
+      "id": "wagon-detail",
+      "name": "街道の幌馬車 · 細部",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "apiary-desktop.png",
+      "id": "apiary",
+      "name": "蜜とハーブの庭 · 庭全景",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "apiary-detail-desktop.png",
+      "id": "apiary-detail",
+      "name": "蜜とハーブの庭 · 細部",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "forge-desktop.png",
+      "id": "forge",
+      "name": "森の鍛冶工房 · 全景",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "forge-detail-desktop.png",
+      "id": "forge-detail",
+      "name": "森の鍛冶工房 · 細部",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "shrine-desktop.png",
+      "id": "shrine",
+      "name": "星詠みの祠 · 全景",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "shrine-detail-desktop.png",
+      "id": "shrine-detail",
+      "name": "星詠みの祠 · 細部",
+      "format": "desktop",
+      "graphics": {
+        "preset": 1,
+        "width": 1600,
+        "height": 1000,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "well-phone.png",
+      "id": "well",
+      "name": "旅人の井戸 · 全景",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "well-detail-phone.png",
+      "id": "well-detail",
+      "name": "旅人の井戸 · 細部",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "market-phone.png",
+      "id": "market",
+      "name": "風の市 · 全景",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "market-detail-phone.png",
+      "id": "market-detail",
+      "name": "風の市 · 細部",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "wagon-phone.png",
+      "id": "wagon",
+      "name": "街道の幌馬車 · 全景",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "wagon-detail-phone.png",
+      "id": "wagon-detail",
+      "name": "街道の幌馬車 · 細部",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "apiary-phone.png",
+      "id": "apiary",
+      "name": "蜜とハーブの庭 · 庭全景",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "apiary-detail-phone.png",
+      "id": "apiary-detail",
+      "name": "蜜とハーブの庭 · 細部",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "forge-phone.png",
+      "id": "forge",
+      "name": "森の鍛冶工房 · 全景",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "forge-detail-phone.png",
+      "id": "forge-detail",
+      "name": "森の鍛冶工房 · 細部",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "shrine-phone.png",
+      "id": "shrine",
+      "name": "星詠みの祠 · 全景",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "shrine-detail-phone.png",
+      "id": "shrine-detail",
+      "name": "星詠みの祠 · 細部",
+      "format": "phone",
+      "graphics": {
+        "preset": 1,
+        "width": 390,
+        "height": 844,
+        "pixelRatio": 1,
+        "shadowSize": 2048,
+        "activeGrass": 49000,
+        "grassTarget": 49000,
+        "grassPending": false,
+        "terrainTriangles": 115200,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    },
+    {
+      "file": "shrine-detail-uhd.png",
+      "id": "shrine-detail",
+      "name": "星詠みの祠 · 細部",
+      "format": "uhd",
+      "graphics": {
+        "preset": 4,
+        "width": 3840,
+        "height": 2160,
+        "pixelRatio": 3,
+        "shadowSize": 4096,
+        "activeGrass": 98000,
+        "grassTarget": 98000,
+        "grassPending": false,
+        "terrainTriangles": 460800,
+        "autoScale": 1,
+        "frameAverageMs": 0,
+        "shadowEveryFrame": true
+      }
+    }
+  ],
+  "errors": [
+    "Cannot read properties of null (reading '0')"
+  ],
+  "scenery": {
+    "counts": {
+      "conifers": 520,
+      "shrubs": 2100,
+      "ferns": 2200,
+      "wildflowers": 6200,
+      "mushrooms": 900,
+      "boulders": 1400,
+      "fallenLogs": 120,
+      "cabins": 7,
+      "camp": 6,
+      "ruins": 5,
+      "windmills": 1,
+      "well": 1,
+      "tiledRoofs": 5,
+      "craftedBarrels": 24,
+      "pottery": 100,
+      "herbPlanters": 33,
+      "craftedLanterns": 13,
+      "market": 1,
+      "craftedCrates": 26,
+      "wagon": 1,
+      "spokedWheels": 4,
+      "apiary": 1,
+      "beehives": 3,
+      "forge": 1,
+      "shrine": 1
+    },
+    "instances": 45990,
+    "activeInstances": 25502,
+    "visibleInstances": 15699,
+    "craftedInstances": 6784,
+    "microInstances": 467,
+    "visibleMicroInstances": 50,
+    "batches": 1215,
+    "density": 0.4,
+    "range": 460,
+    "views": 12
+  },
+  "photoChecks": [
+    "12 compositions on desktop and phone",
+    "3840x2160 UHD render",
+    "next-view deep link",
+    "real PNG download",
+    "toolbar bounds at three screen sizes"
+  ]
+}
