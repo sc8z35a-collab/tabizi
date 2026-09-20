@@ -1,0 +1,67 @@
+/* Flight instruments share the world's quiet palette without obscuring flight. */
+#airship-board{position:fixed;z-index:22;left:30px;top:100px;padding:13px 21px;border:1px solid #e7d7ab80;border-radius:3px;background:#173337dd;color:#f5ebd2;font:500 12px 'Noto Sans JP',sans-serif;letter-spacing:.12em;box-shadow:0 5px 22px #081b2426;cursor:pointer;backdrop-filter:blur(12px)}
+#airship-board::before{content:'NT–01';font:10px monospace;color:#b3dce1;margin-right:15px;letter-spacing:.15em}
+#airship-board:hover{background:#28545b}
+body[data-review] #airship-board{display:none}
+#airship-hud{position:fixed;inset:0;z-index:18;pointer-events:none;color:#f5efd9;text-shadow:0 1px 6px #172d36;font-family:'Noto Sans JP',sans-serif}
+#airship-hud[hidden],#airship-board[hidden]{display:none!important}
+#airship-hud button{pointer-events:auto;cursor:pointer;border:1px solid #e3d9b34d;color:#f3ebd6;background:#17343be6;border-radius:3px;min-height:39px;padding:9px 14px;font:11px 'Noto Sans JP',sans-serif;letter-spacing:.03em;backdrop-filter:blur(12px);transition:background .15s,border-color .15s;touch-action:none}
+#airship-hud button:hover,#airship-hud button[aria-pressed=true]{background:#48757b;border-color:#e3d9b3}
+#airship-hud button:focus-visible,#airship-board:focus-visible{outline:2px solid #f4d991;outline-offset:3px}
+#airship-hud button:disabled{opacity:.35;cursor:default}
+.as-title{position:absolute;top:106px;left:34px}
+.as-title>small{font:12px monospace;letter-spacing:.24em;color:#e8dfc0}
+.as-title>small span{font-size:9px;margin-left:10px;border:1px solid #dbd4b766;padding:4px 7px}
+.as-title h2{font-family:'Noto Serif JP',serif;font-size:35px;font-weight:400;letter-spacing:.18em;margin:13px 0 9px}
+.as-title h2 i{font:11px 'Noto Sans JP',sans-serif;letter-spacing:.16em;font-style:normal;margin-left:18px;color:#e2e8df}
+.as-title p{font:9px monospace;letter-spacing:.13em;opacity:.8}
+.as-telemetry{position:absolute;top:111px;right:32px;display:grid;grid-template-columns:1fr 1fr;gap:23px 30px;text-align:right;padding:17px 20px;background:linear-gradient(120deg,#15333b44,#15333bba);border-top:1px solid #e5ddb44d;min-width:236px}
+.as-telemetry small{display:block;font-size:8px;letter-spacing:.07em;color:#d9e7dc;margin-bottom:6px}
+.as-telemetry strong{font:25px monospace;font-weight:400}
+.as-telemetry b{font-weight:400}
+.as-telemetry em{font:10px sans-serif;opacity:.65;font-style:normal;margin-left:6px}
+.as-navigation{position:absolute;top:289px;right:33px;display:flex;justify-content:space-between;gap:22px;font:9px monospace;color:#d6e7ce;background:#15333b99;padding:12px 14px;min-width:248px}
+.as-plan{position:absolute;right:43px;top:348px;text-align:center;width:150px;background:#15333b66;border:1px solid #dfd6ac26;border-radius:3px;padding:6px}
+.as-plan svg{width:90px;height:152px}
+.as-plan path{fill:#1a38434d;stroke:#d5d6b480;stroke-width:1}
+.as-plan text{fill:#e1e5d4;font:8px sans-serif;text-anchor:middle}
+.as-plan circle{fill:#eac47e;stroke:#fff4d2;stroke-width:1.5}
+.as-plan span{display:block;font:9px 'Noto Sans JP',sans-serif;padding:5px 0 8px;letter-spacing:.07em}
+.as-actions{position:absolute;bottom:95px;left:50%;transform:translateX(-50%);display:grid;grid-template-columns:repeat(3,max-content);gap:7px;max-width:calc(100% - 380px)}
+#airship-seat{border-color:#dec697a8;background:#3f5b56eb}
+.as-lift{position:absolute;bottom:113px;right:33px;display:flex;gap:8px}
+#airship-hud .as-lift button{font-size:23px;min-width:59px;min-height:65px}
+.as-lift small{display:block;font:9px 'Noto Sans JP',sans-serif;margin-top:3px}
+.as-help{position:absolute;bottom:46px;left:50%;transform:translateX(-50%);text-align:center;display:flex;flex-direction:column;align-items:center;gap:7px;white-space:nowrap;font-size:10px;letter-spacing:.04em}
+#airship-hud .as-help button{min-height:20px;background:none;border:0;padding:0;font-size:9px;opacity:.7}
+.aboard-airship .journey-panel,.aboard-airship .region-label,.aboard-airship .vitals,.aboard-airship .world-event,.aboard-airship .bottom-center,.aboard-airship .right-hud,.aboard-airship #entity-labels,.aboard-airship #landmark-marker,.aboard-airship #memory-runes,.aboard-airship #combat-reticle,.aboard-airship #threat-indicator,.aboard-airship #sense-button,.aboard-airship #boss-hud{display:none!important}
+.aboard-airship #action-notice{top:auto;bottom:217px;transform:translateX(-50%);height:auto;max-width:min(85vw,610px);z-index:24}
+.aboard-airship #portrait-hint{display:none!important}
+.aboard-airship .topbar{z-index:25}
+.object-review #airship-board{display:none!important}
+.aboard-airship .movement-control{z-index:23}
+.aboard-airship .vignette{opacity:.4}
+@media(min-width:1000px){body:not(.aboard-airship) #airship-board{top:97px}body:not(.aboard-airship) .journey-panel{top:157px}}
+@media(max-width:700px){
+ #airship-board{top:81px;left:17px;font-size:10px;padding:10px 13px}
+ .aboard-airship .compass{top:83px;left:auto;right:19px;transform:none;width:108px}
+ .as-title{top:83px;left:19px}.as-title>small{font-size:9px}.as-title h2{font-size:27px;margin:10px 0}.as-title h2 i{display:none}.as-title p{font-size:8px}
+ .as-telemetry{top:183px;right:17px;left:17px;display:flex;justify-content:space-between;padding:11px 12px;gap:9px;min-width:0}.as-telemetry small{font-size:6px}.as-telemetry strong{font-size:19px}.as-telemetry em{font-size:8px;margin-left:3px}
+ .as-navigation{top:263px;left:17px;right:17px;font-size:8px;min-width:0;padding:8px 12px}
+ .as-plan{top:305px;right:17px;width:109px;padding:0;max-height:calc(100dvh - 635px);overflow:hidden}.as-plan svg{height:117px;width:72px}.as-plan span{font-size:8px}
+ .as-actions{bottom:235px;max-width:calc(100% - 28px);gap:5px;grid-template-columns:repeat(3,1fr);width:calc(100% - 32px)}
+ #airship-hud .as-actions button{padding:8px 5px;font-size:9px;min-height:38px}
+ .as-lift{bottom:91px;right:19px;gap:6px}#airship-hud .as-lift button{min-width:51px;min-height:60px}
+ .as-help{bottom:36px;gap:9px;font-size:8px;max-width:96vw}.as-help>span{white-space:normal;text-align:center}
+ .aboard-airship #action-notice{bottom:325px;font-size:10px}
+}
+@media(max-height:540px) and (orientation:landscape){
+ #airship-board{top:66px;left:20px;padding:8px 14px}
+ .as-title{top:64px;left:21px}.as-title h2{font-size:24px;margin:8px 0}.as-title h2 i{font-size:9px}.as-title p{font-size:8px}
+ .as-telemetry{top:67px;right:20px;left:auto;display:grid;min-width:170px;grid-template-columns:1fr 1fr;gap:12px 16px;padding:10px 14px}.as-telemetry strong{font-size:20px}.as-telemetry small{font-size:6px}
+ .as-navigation{top:193px;right:20px;left:auto;min-width:174px;font-size:7px;padding:8px 12px}
+ .as-plan{display:none}.as-actions{bottom:68px;max-width:calc(100% - 315px);width:auto;grid-template-columns:repeat(3,max-content);gap:5px}
+ #airship-hud .as-actions button{font-size:8px;padding:6px 8px;min-height:32px}
+ .as-lift{bottom:72px;right:20px}#airship-hud .as-lift button{min-width:45px;min-height:52px;font-size:19px}
+ .as-help{bottom:22px;font-size:8px;gap:5px}.aboard-airship #action-notice{bottom:147px;font-size:10px}
+}

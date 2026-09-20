@@ -243,10 +243,10 @@
   function resetStick(){joy.id=null;joy.x=joy.y=0;knob.style.transform='';}
   for(const type of ['pointerup','pointercancel','lostpointercapture'])joystick.addEventListener(type,e=>{if(e.pointerId===joy.id)resetStick();});
   $('world').addEventListener('pointerdown',e=>{if(paused||expansion.dead||lookPointer!==null)return;lookPointer=e.pointerId;lastLookX=e.clientX;lastLookY=e.clientY;$('world').setPointerCapture(e.pointerId);startAudioIfEnabled();});
-  $('world').addEventListener('pointermove',e=>{if(e.pointerId!==lookPointer||paused)return;state.yaw-=(e.clientX-lastLookX)*.004*state.sensitivity;state.pitch=clamp(state.pitch+(e.clientY-lastLookY)*.003*state.sensitivity,-.3,.85);lastLookX=e.clientX;lastLookY=e.clientY;});
+  $('world').addEventListener('pointermove',e=>{if(e.pointerId!==lookPointer||paused)return;state.yaw-=(e.clientX-lastLookX)*.004*state.sensitivity;state.pitch=clamp(state.pitch+(e.clientY-lastLookY)*.003*state.sensitivity,expansion.airship?.aboard?-1.1:-.3,expansion.airship?.aboard?1.1:.85);lastLookX=e.clientX;lastLookY=e.clientY;});
   const endLook=()=>{lookPointer=null;};for(const type of ['pointerup','pointercancel','lostpointercapture'])$('world').addEventListener(type,e=>{if(e.pointerId===lookPointer)endLook();});
   window.addEventListener('keydown',e=>{if(paused||expansion.dead)return;if(e.code==='Space'&&e.target.closest?.('button,input,select'))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys.add(e.code);if(e.code==='Space'&&!e.repeat)jump();if(e.code==='KeyM')openDialog('map-dialog');});window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();resetStick();endLook();});
-  function jump(){if(state.onGround&&!paused&&!expansion.mounted&&!expansion.dead){state.vy=7.4;state.onGround=false;}}
+  function jump(){if(expansion.airship?.aboard){if(!paused)expansion.airship.jump();return;}if(state.onGround&&!paused&&!expansion.mounted&&!expansion.dead){state.vy=7.4;state.onGround=false;}}
   $('jump-button').addEventListener('pointerdown',e=>{e.preventDefault();jump();startAudioIfEnabled();});$('jump-button').addEventListener('click',e=>{if(e.detail===0)jump();});
   $('run-button').addEventListener('click',()=>{if(paused||expansion.dead)return;state.running=!state.running;$('run-button').classList.toggle('active',state.running);$('run-button').setAttribute('aria-pressed',String(state.running));});
   let audioContext=null,audioGain=null,audioEnabled=false;
@@ -458,7 +458,8 @@
     if(!paused&&!expansion.dead){let mx=joy.x,mz=joy.y;if(keys.has('KeyW')||keys.has('ArrowUp'))mz-=1;if(keys.has('KeyS')||keys.has('ArrowDown'))mz+=1;if(keys.has('KeyA')||keys.has('ArrowLeft'))mx-=1;if(keys.has('KeyD')||keys.has('ArrowRight'))mx+=1;
       let strength=Math.hypot(mx,mz);if(strength>1){mx/=strength;mz/=strength;strength=1;}const wantsRun=state.running||keys.has('ShiftLeft')||keys.has('ShiftRight')||(joy.id!==null&&strength>.88);const running=expansion.prepareMove(dt,{mx,mz,running:wantsRun});const speed=running?20:8.5;
       const fov=$('motion-toggle').checked?58:58+(running?5:0);camera.fov=mix(camera.fov,fov,1-Math.exp(-dt*3));camera.updateProjectionMatrix();
-      if(!expansion.mounted){
+      if(expansion.airship.aboard){expansion.airship.setInput({mx,mz,running});}
+      else if(!expansion.mounted){
       const dx=mx*Math.cos(state.yaw)+mz*Math.sin(state.yaw),dz=-mx*Math.sin(state.yaw)+mz*Math.cos(state.yaw);
       let nx=clamp(state.x+dx*speed*dt,-1430,1430),nz=clamp(state.z+dz*speed*dt,-1430,1430);
       // No invisible water floor: the shore gently blocks entry into deep water.
@@ -466,6 +467,7 @@
       state.x=nx;state.z=nz;state.moving=mix(state.moving,strength,1-Math.exp(-dt*9));state.walkTime+=dt*(running?13:8)*strength;
       state.vy-=18*dt;state.jump+=state.vy*dt;if(state.jump<=0){state.jump=0;state.vy=0;state.onGround=true;}
       state.y=height(state.x,state.z);player.position.set(state.x,state.y+state.jump+Math.sin(state.walkTime*2)*.035*strength,state.z);
+      expansion.airship.collideGroundPlayer();
       if(strength>.05){let target=Math.atan2(-dx,-dz);let diff=Math.atan2(Math.sin(target-player.rotation.y),Math.cos(target-player.rotation.y));player.rotation.y+=diff*(1-Math.exp(-dt*10));}
       limbs[0].rotation.x=Math.sin(state.walkTime)*.65*state.moving;limbs[1].rotation.x=-Math.sin(state.walkTime)*.65*state.moving;torso.rotation.z=Math.sin(state.walkTime)*.02*state.moving;
       const capePos=capeGeo.attributes.position;for(let i=0;i<capePos.count;i++){const free=1-(capeBase[i*3+1]+.57)/1.14;capePos.setZ(i,capeBase[i*3+2]+Math.sin(elapsed*3.7+capeBase[i*3]*4)*.08*free+state.moving*free*.12);}capePos.needsUpdate=true;
@@ -491,6 +493,7 @@
     renderer.render(scene,camera);
     if(firstFrame){firstFrame=false;document.body.dataset.ready='true';$('loading').classList.add('done');setTimeout(()=>$('loading').style.display='none',1400);console.info('Verdant Wilds ready: terrain, 98000 wind-animated grass blades, 3 landmarks, touch and keyboard controls.');}
   }
+  if(new URLSearchParams(location.search).get('airship')==='1'&&!objectReview)expansion.airship.board(true);
   animate();
   if(testing&&new URLSearchParams(location.search).get('review')==='boss')expansion.test.prepareBoss();
   // Diagnostics; state-mutating verification hooks exist only in selftest mode.
