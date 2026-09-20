@@ -278,7 +278,18 @@
   $('quality-select').addEventListener('change',()=>{autoScale=1;resetFrameWindow();resize();applyWorldQuality();});
   $('density-select').addEventListener('change',()=>expansion.setSceneryDensity(Number($('density-select').value)));
   $('sensitivity-slider').addEventListener('input',e=>state.sensitivity=Number(e.target.value));$('hud-toggle').addEventListener('change',e=>document.body.classList.toggle('clean-hud',!e.target.checked));$('detail-toggle').addEventListener('change',e=>document.body.classList.toggle('immersive',!e.target.checked));$('motion-toggle').checked=matchMedia('(prefers-reduced-motion: reduce)').matches;document.body.classList.toggle('reduced-motion',$('motion-toggle').checked);$('motion-toggle').addEventListener('change',e=>document.body.classList.toggle('reduced-motion',e.target.checked));$('dismiss-portrait').addEventListener('click',()=>$('portrait-hint').style.display='none');
-  $('time-slider').addEventListener('input',e=>{const v=Number(e.target.value);skyUniforms.uWarm.value=v*.75;sun.color.setHSL(.10-v*.045,.20+v*.30,.91);sun.intensity=3.35-v*.8;sun.position.y=420-v*280;hemi.intensity=2.35-v*.65;skyUniforms.uSun.value.set(-.46,.8-v*.65,-.75).normalize();const hours=10+v*10;const hh=Math.floor(hours),mm=Math.floor((hours-hh)*60);$('world-time').textContent=`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;$('time-label').textContent=v<.35?'澄んだ昼':v<.75?'夕暮れ前':'黄金の夕暮れ';});
+  function applyTime(){
+    const v=Number($('time-slider').value),storm=skyUniforms.uStorm.value;
+    skyUniforms.uWarm.value=v*.75;sun.color.setHSL(.10-v*.045,.20+v*.30,.91);
+    sun.intensity=(3.35-v*.8)*(1-storm*.79);sun.position.y=420-v*280;
+    hemi.intensity=(2.35-v*.65)*(1-storm*.42);
+    skyUniforms.uSun.value.set(-.46,.8-v*.65,-.75).normalize();
+    const minutes=Math.round((10+v*10)*60);
+    $('world-time').textContent=`${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`;
+    $('time-label').textContent=v<.35?'澄んだ昼':v<.75?'夕暮れ前':'黄金の夕暮れ';
+    renderer.shadowMap.needsUpdate=true;
+  }
+  $('time-slider').addEventListener('input',applyTime);applyTime();
   const renderSize=new T.Vector2();
   let autoScale=1,frameSeconds=0,frameSamples=0,slowWindows=0,fastWindows=0,frameAverage=0;
   function resetFrameWindow(){frameSeconds=0;frameSamples=0;slowWindows=fastWindows=0;}
@@ -324,23 +335,50 @@
   window.addEventListener('resize',resize);resize();
 
   // The same height field powers the illustrated maps, including the real lake.
-  const mapBase=document.createElement('canvas');mapBase.width=mapBase.height=512;const mb=mapBase.getContext('2d');const mi=mb.createImageData(512,512);
-  for(let py=0;py<512;py++){for(let px=0;px<512;px++){const x=(px/512-.5)*1200,z=(py/512-.5)*1200-110,h=height(x,z),v=noise(x*.04,z*.04);const index=(py*512+px)*4;const contour=Math.abs((h+100)%5)<.38;let r=85+h*.6+v*8,g=108+h*.55+v*8,b=78+h*.4;if(lakeDistance(x,z)<97){r=92;g=137;b=134;}if(contour){r-=13;g-=13;b-=10;}mi.data[index]=r;mi.data[index+1]=g;mi.data[index+2]=b;mi.data[index+3]=255;}}mb.putImageData(mi,0,0);
-  const mapCtx=$('minimap').getContext('2d');
+  const mapSize=1024,mapSpan=4600;
+  const mapBase=document.createElement('canvas');mapBase.width=mapBase.height=mapSize;
+  const mb=mapBase.getContext('2d'),mi=mb.createImageData(mapSize,mapSize);
+  for(let py=0;py<mapSize;py++)for(let px=0;px<mapSize;px++){
+    const x=(px/mapSize-.5)*mapSpan,z=(py/mapSize-.5)*mapSpan,h=height(x,z),v=noise(x*.04,z*.04),index=(py*mapSize+px)*4;
+    const contour=Math.abs((h+100)%5)<.38;let r=85+h*.6+v*8,g=108+h*.55+v*8,b=78+h*.4;
+    if(lakeDistance(x,z)<97){r=92;g=137;b=134;}if(contour){r-=13;g-=13;b-=10;}
+    mi.data[index]=r;mi.data[index+1]=g;mi.data[index+2]=b;mi.data[index+3]=255;
+  }
+  mb.putImageData(mi,0,0);
+  const mapCtx=$('minimap').getContext('2d');let lastMapLabels=[];
   function drawMap(ctx,w,h,large){
-    ctx.clearRect(0,0,w,h);ctx.save();if(!large){ctx.beginPath();ctx.arc(w/2,h/2,w/2,0,Math.PI*2);ctx.clip();}
-    const span=large?850:480;const centerX=large?-50:state.x,centerZ=large?-130:state.z;const scale=w/span;
-    const sx=((centerX-span/2)/1200+.5)*512,sy=((centerZ-span*h/w/2+110)/1200+.5)*512;
-    ctx.fillStyle='#617555';ctx.fillRect(0,0,w,h);ctx.drawImage(mapBase,sx,sy,span/1200*512,span*h/w/1200*512,0,0,w,h);
-    ctx.strokeStyle='#e5e2b91a';ctx.lineWidth=1;for(let i=1;i<5;i++){ctx.beginPath();ctx.moveTo(w*i/5,0);ctx.lineTo(w*i/5,h);ctx.stroke();ctx.beginPath();ctx.moveTo(0,h*i/5);ctx.lineTo(w,h*i/5);ctx.stroke();}
+    ctx.clearRect(0,0,w,h);ctx.save();ctx.beginPath();
+    if(large)ctx.rect(0,0,w,h);else ctx.arc(w/2,h/2,w/2,0,Math.PI*2);ctx.clip();
+    // Frame both the memories and the traveller, including the world edges.
+    const minX=Math.min(-425,state.x-120),maxX=Math.max(325,state.x+120);
+    const minZ=Math.min(-464,state.z-120),maxZ=Math.max(204,state.z+120);
+    const span=large?Math.max(850,maxX-minX,(maxZ-minZ)*w/h):480;
+    const centerX=large?(minX+maxX)/2:state.x,centerZ=large?(minZ+maxZ)/2:state.z,scale=w/span;
+    const sx=((centerX-span/2)/mapSpan+.5)*mapSize,sy=((centerZ-span*h/w/2)/mapSpan+.5)*mapSize;
+    ctx.fillStyle='#617555';ctx.fillRect(0,0,w,h);ctx.drawImage(mapBase,sx,sy,span/mapSpan*mapSize,span*h/w/mapSpan*mapSize,0,0,w,h);
+    ctx.strokeStyle='#e5e2b91a';ctx.lineWidth=1;
+    for(let i=1;i<5;i++){ctx.beginPath();ctx.moveTo(w*i/5,0);ctx.lineTo(w*i/5,h);ctx.stroke();ctx.beginPath();ctx.moveTo(0,h*i/5);ctx.lineTo(w,h*i/5);ctx.stroke();}
     const mx=x=>(x-centerX)*scale+w/2,mz=z=>(z-centerZ)*scale+h/2;
-    // Dotted route between the three memories.
+    const labels=[],cssScale=large?w/Math.max(1,$('large-map').clientWidth):1;
+    function drawLabel(text,x,y,primary=false){
+      const font=(primary?11:9)*cssScale;ctx.font=`${font}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+      const width=ctx.measureText(text).width+8,height=font+8;
+      for(const dy of [height,-height,height*2,-height*2]){
+        const left=clamp(x-width/2,4,w-width-4),top=y+dy-height/2;
+        const box={left,top,right:left+width,bottom:top+height,text};
+        if(top<4||box.bottom>h-4||labels.some(r=>box.left<r.right&&box.right>r.left&&box.top<r.bottom&&box.bottom>r.top))continue;
+        labels.push(box);ctx.fillStyle='#1d3329e8';ctx.fillRect(left,top,width,height);
+        ctx.fillStyle=primary?'#f3ecd5':'#d8be8c';ctx.fillText(text,left+width/2,top+height/2);return;
+      }
+    }
     ctx.beginPath();ctx.setLineDash([3,7]);ctx.strokeStyle='#ede0a65e';landmarks.forEach((l,i)=>i?ctx.lineTo(mx(l.x),mz(l.z)):ctx.moveTo(mx(l.x),mz(l.z)));ctx.stroke();ctx.setLineDash([]);
-    landmarks.forEach(l=>{const x=mx(l.x),z=mz(l.z);ctx.save();ctx.translate(x,z);ctx.rotate(Math.PI/4);ctx.fillStyle='#e6d39c';ctx.strokeStyle='#efdeaa';ctx.lineWidth=large?2:1.5;const size=large?6:4;if(discovered.has(l.id))ctx.fillRect(-size,-size,size*2,size*2);else ctx.strokeRect(-size,-size,size*2,size*2);ctx.restore();if(large){ctx.font='18px "Noto Serif JP", serif';ctx.textAlign='center';ctx.fillStyle='#f3ecd5';ctx.fillText(l.name,x,z+32);}});
-    expansion.drawMap(ctx,mx,mz,large);
+    landmarks.forEach(l=>{const x=mx(l.x),z=mz(l.z);ctx.save();ctx.translate(x,z);ctx.rotate(Math.PI/4);ctx.fillStyle='#e6d39c';ctx.strokeStyle='#efdeaa';ctx.lineWidth=large?2:1.5;const size=large?6:4;if(discovered.has(l.id))ctx.fillRect(-size,-size,size*2,size*2);else ctx.strokeRect(-size,-size,size*2,size*2);ctx.restore();if(large)drawLabel(l.name,x,z,true);});
+    expansion.drawMap(ctx,mx,mz,large,drawLabel);
     ctx.save();ctx.translate(mx(state.x),mz(state.z));ctx.rotate(-state.yaw);ctx.fillStyle='#fff5d6';ctx.shadowBlur=10;ctx.shadowColor='#fcf3c3';ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(-5,6);ctx.lineTo(0,3);ctx.lineTo(5,6);ctx.closePath();ctx.fill();ctx.restore();ctx.restore();
+    if(large)lastMapLabels=labels;
   }
   function drawLargeMap(){drawMap($('large-map').getContext('2d'),700,550,true);$('map-legend').replaceChildren(...landmarks.map(l=>{const s=document.createElement('span');s.textContent=`${discovered.has(l.id)?'◆':'◇'} ${l.name}`;return s;}));}
+  window.addEventListener('resize',()=>{if($('map-dialog').open)drawLargeMap();});
   function save(){if(testing)return;try{localStorage.setItem('verdant-wilds-v1',JSON.stringify({x:state.x,z:state.z,discovered:[...discovered]}));}catch(e){}}
   window.addEventListener('pagehide',save);
   let toastTimeout=0;function discover(l){discovered.add(l.id);l.glow.visible=false;$('discovery-name').textContent=l.name;$('discovery-toast').classList.add('show');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('discovery-toast').classList.remove('show'),6500);if(discovered.size===3){$('ambient-caption').textContent='すべての記憶を集めた。その先も、旅はつづく。';}save();}
@@ -361,6 +399,18 @@
   const moteGeo=new T.BufferGeometry();const motePos=new Float32Array(180*3);for(let i=0;i<180;i++){motePos[i*3]=(rand()-.5)*100;motePos[i*3+1]=rand()*14;motePos[i*3+2]=(rand()-.5)*100;}moteGeo.setAttribute('position',new T.BufferAttribute(motePos,3));const motes=new T.Points(moteGeo,new T.PointsMaterial({color:'#fff4c9',size:.075,transparent:true,opacity:.68,depthWrite:false}));scene.add(motes);
   const birds=[];const birdMat=new T.MeshBasicMaterial({color:'#52645d',side:T.DoubleSide});const wingGeo=new T.BufferGeometry();wingGeo.setAttribute('position',new T.Float32BufferAttribute([0,0,0,1.1,.12,.16,.2,0,.31],3));wingGeo.computeVertexNormals();for(let i=0;i<12;i++){const g=new T.Group();const left=new T.Mesh(wingGeo,birdMat),right=new T.Mesh(wingGeo,birdMat);right.scale.x=-1;g.add(left,right);scene.add(g);birds.push({g,left,right,phase:rand()*6,r:80+rand()*140,y:65+rand()*65});}
   const expansion=window.createWildfront({T,scene,camera,renderer,state,player,height,lakeDistance,keys,ground,rocks,trunks,crowns,stoneMat,brickMats,sun,hemi,skyUniforms,testing,openDialog,discovered,playCue,resetInputs:()=>{keys.clear();resetStick();endLook();state.running=false;$('run-button').classList.remove('active');$('run-button').setAttribute('aria-pressed','false');},getPaused:()=>paused});
+  let contextLost=false;
+  $('world').addEventListener('webglcontextlost',event=>{
+    event.preventDefault();contextLost=true;paused=true;keys.clear();resetStick();expansion.pauseInputs();
+    document.querySelectorAll('dialog[open]').forEach(d=>d.close());
+    $('loading').style.display='none';$('error-message').hidden=false;
+    $('error-message').querySelector('h2').textContent='描画が中断されました';
+    $('error-message').querySelector('p').textContent='画面の復旧を待っています。戻らない場合は再読み込みしてください。保存済みの旅の記録は維持されます。';
+  });
+  $('world').addEventListener('webglcontextrestored',()=>{
+    contextLost=false;resize();applyWorldQuality();$('error-message').hidden=true;
+    paused=objectReview||!!document.querySelector('dialog[open]');
+  });
   document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();resetStick();endLook();expansion.pauseInputs();}});
   sceneryClearance=expansion.sceneryClearance;
   plantGrass(state.x,state.z,true);
@@ -399,7 +449,7 @@
   }
   const camDesired=new T.Vector3(),lookTarget=new T.Vector3();let elapsed=0,firstFrame=true,shadowTick=0,pauseRenderTick=0;const capeBase=capeGeo.attributes.position.array.slice();const bannerBase=bannerGeo.attributes.position.array.slice();
   function animate(){requestAnimationFrame(animate);const raw=clock.getDelta();
-    if(document.hidden){resetFrameWindow();return;}
+    if(document.hidden||contextLost){resetFrameWindow();return;}
     if(!firstFrame)sampleFrame(raw);
     pauseRenderTick+=raw;
     if(paused&&!firstFrame&&pauseRenderTick<.1)return;
@@ -445,5 +495,5 @@
   if(testing&&new URLSearchParams(location.search).get('review')==='boss')expansion.test.prepareBoss();
   // Diagnostics; state-mutating verification hooks exist only in selftest mode.
   window.verdantWorld={expansion,getState:()=>({position:{x:state.x,y:state.y,z:state.z},jump:state.jump,onGround:state.onGround,yaw:state.yaw,running:state.running,discovered:[...discovered],paused,grass:grassCount,graphics:{preset:Number($('quality-select').value),width:renderSize.x,height:renderSize.y,pixelRatio:renderer.getPixelRatio(),shadowSize:sun.shadow.mapSize.x,activeGrass:grass.count,grassTarget,grassPending,terrainTriangles:groundGeo.index.count/3,autoScale,frameAverageMs:frameAverage*1000,shadowEveryFrame:renderer.shadowMap.autoUpdate},scenery:expansion.getSceneryStats(),webgl:renderer.capabilities.isWebGL2?'WebGL2':'WebGL1',drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
-  if(testing)window.verdantWorld.test={sampleFrame,resetFrameWindow,setObjectView,flushGrass:()=>updateGrass(grassCount),renderReview(){reviewCamera();sky.position.copy(camera.position);renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');}};
+  if(testing)window.verdantWorld.test={sampleFrame,resetFrameWindow,setObjectView,mapLabels:()=>lastMapLabels.map(r=>({...r})),flushGrass:()=>updateGrass(grassCount),renderReview(){reviewCamera();sky.position.copy(camera.position);renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');}};
 })();

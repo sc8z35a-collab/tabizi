@@ -27,7 +27,7 @@
 .immersive #marker-distance,.immersive .minimap-n,.immersive .map-expand,
 .immersive #boss-hud>small,.immersive #boss-hud>div:not(.boss-track),
 .immersive #boss-hint,.immersive #vehicle-name,.immersive #vehicle-help {display:none!important}
-.immersive .vitals-heading,.immersive .vitals-sub,.immersive #action-notice,
+.immersive .vitals-heading,.immersive .vitals-sub,
 .immersive #discovery-toast>* {position:absolute!important;width:1px!important;height:1px!important;padding:0!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
 .immersive .action-button>span:not(.heal-cross){display:none}
 .immersive .topbar{padding:24px 32px;pointer-events:none;justify-content:flex-end}
@@ -94,7 +94,7 @@
 .mounted #attack-button,.mounted #heal-button{opacity:.65}
 .reduced-motion *, .reduced-motion *::before{animation:none!important;transition:none!important}
 .reduced-motion #resonance-flash,.reduced-motion #lightning-overlay{display:none!important}
-.immersive.clean-hud .movement-control,.immersive.clean-hud .action-buttons{visibility:hidden}
+.clean-hud .movement-control,.clean-hud .action-buttons{visibility:hidden}
 @media(max-width:600px){
   .immersive .topbar{padding:18px 16px}.immersive .tools{gap:5px}.immersive .icon-button{width:36px;height:36px}.immersive #fullscreen-button{display:none}
   .immersive .vitals{left:46px;top:31px;width:106px}.immersive .vital-icon{left:-27px;width:19px;top:-7px}
@@ -115,3 +115,89 @@
   .immersive #vehicle-dashboard{bottom:22px}
 }
 @media(max-width:360px) and (orientation:portrait){.immersive .vitals{width:80px}.immersive .tools{gap:3px}.immersive .icon-button{width:33px;height:33px}.immersive .movement-control{left:12px}.immersive #joystick{width:88px;height:88px}.immersive .right-hud{right:10px}}
+
+/* Visual regression repairs: independent lanes for compact text HUD. */
+body:not(.immersive) #memory-runes{top:94px;left:50%;transform:translateX(-50%)}
+.action-button{position:relative}
+body:not(.immersive) #combo-pips,body:not(.immersive) #potion-pips{bottom:3px}
+.action-button:disabled{opacity:.35!important}
+#joystick .joystick-n,#joystick .joystick-s{left:50%;transform:translateX(-50%)}
+#joystick .joystick-w,#joystick .joystick-e{top:50%;transform:translateY(-50%)}
+#large-map{height:auto;aspect-ratio:700/550}
+#action-notice{width:max-content;max-width:min(480px,88vw);white-space:normal;overflow-wrap:anywhere;pointer-events:none}
+.immersive #action-notice{top:40%;font-size:10px}
+.mounted #portrait-hint{display:none}
+dialog{overscroll-behavior:contain;scroll-padding-top:48px}
+dialog .dialog-close{position:sticky;float:right;top:0;right:auto;z-index:2;width:36px;height:36px;display:grid;place-items:center;margin:-20px -12px 0 8px;border:1px solid #d4d5b737;border-radius:50%;background:#203b32;opacity:1}
+dialog select{max-width:100%;min-width:0}
+#error-message{overflow:auto;touch-action:pan-y}
+.photo-controls{flex-wrap:wrap;max-height:calc(100dvh - 100px);overflow:auto;touch-action:pan-y}
+.photo-controls>*{flex-shrink:0}
+.photo-controls select{min-width:0;max-width:100%}
+.photo-heading{right:max(22px,env(safe-area-inset-right))}
+.photo-heading h1{overflow-wrap:anywhere}
+@media(max-width:1000px){
+ body:not(.immersive) .compass{top:76px;width:170px}
+ body:not(.immersive) #memory-runes{top:133px}
+ body:not(.immersive) .live-label{display:none}
+ body:not(.immersive) .journey-panel{top:160px}
+}
+@media(max-height:600px) and (orientation:landscape){
+ .immersive #memory-runes{left:50%;top:31px;transform:translateX(-50%)}
+ body:not(.immersive) .compass{top:67px;width:140px}
+ body:not(.immersive) #memory-runes{top:123px}
+ body:not(.immersive) .vitals{top:72px;bottom:auto;left:26px;width:140px}
+ body:not(.immersive) .journey-panel{top:125px;left:26px;max-width:190px}
+ body:not(.immersive) .journey-panel>.eyebrow,body:not(.immersive) .journey-panel h1,body:not(.immersive) .journey-description{display:none}
+ body:not(.immersive) .journey-panel .quest{margin:0}
+ body:not(.immersive) .journey-panel .text-button{margin-top:8px}
+ body:not(.immersive) .region-label{display:none}
+ body:not(.immersive) .bottom-center{max-width:calc(100vw - 360px)}
+ body:not(.immersive).in-combat .journey-panel{visibility:hidden}
+ body:not(.immersive).in-combat .compass,body:not(.immersive).in-combat #memory-runes{visibility:hidden}
+ body:not(.immersive) #boss-hud{top:67px;width:230px}
+ body:not(.immersive).mounted .journey-panel{visibility:hidden}
+ body:not(.immersive).mounted .bottom-center{display:none}
+ body:not(.immersive) #vehicle-dashboard{bottom:28px;min-width:0;max-width:230px}
+ body:not(.immersive) #vehicle-help{max-width:200px}
+}
+@media(max-width:700px) and (max-height:600px) and (orientation:landscape){
+ body:not(.immersive) .world-event{display:none}
+ body:not(.immersive) .journey-panel{max-width:150px}
+ body:not(.immersive) .journey-panel .text-button{display:none}
+ body:not(.immersive) #boss-hud{left:185px;transform:none;width:calc(100vw - 370px)}
+ body:not(.immersive) #boss-hud h2{font-size:11px;letter-spacing:0}
+ body:not(.immersive) #boss-hud>div:not(.boss-track){flex-direction:column;gap:3px}
+ body:not(.immersive) #boss-hint{letter-spacing:0}
+ body:not(.immersive) #vehicle-dashboard{max-width:calc(100vw - 340px)}
+}
+@media(max-width:600px) and (orientation:portrait){
+ body:not(.immersive) .topbar{padding:18px 16px}
+ body:not(.immersive) .compass{top:76px}
+ body:not(.immersive) #memory-runes{top:132px;left:50%;transform:translateX(-50%)}
+ body:not(.immersive) .world-event{top:153px}
+ body:not(.immersive) .vitals{left:24px;top:209px;bottom:auto;width:144px}
+ body:not(.immersive) .minimap{position:fixed;top:207px;right:21px;width:78px;height:78px}
+ body:not(.immersive) .map-coordinates{display:none}
+ body:not(.immersive) .journey-panel{top:289px;max-width:calc(100vw - 46px)}
+ body:not(.immersive) .journey-panel>.eyebrow,body:not(.immersive) .journey-panel h1{display:none}
+ body:not(.immersive) .journey-panel .quest{margin-top:0}
+ body:not(.immersive) .region-label{display:none}
+ body:not(.immersive) #portrait-hint{bottom:305px;max-width:calc(100% - 32px);white-space:normal}
+ body:not(.immersive) #boss-hud{top:295px}
+ body:not(.immersive).mounted .journey-panel{visibility:hidden}
+ body:not(.immersive) #vehicle-dashboard{top:298px;bottom:auto}
+}
+@media(max-width:600px) and (max-height:700px) and (orientation:portrait){
+ body:not(.immersive) #portrait-hint,body:not(.immersive) .journey-panel .text-button{display:none}
+ body:not(.immersive) #vehicle-dashboard>strong{font-size:29px;margin:4px 0}
+ body:not(.immersive) #vehicle-help{display:none}
+ body:not(.immersive) #vehicle-dashboard{top:280px}
+ body:not(.immersive) #descend-button{padding:5px 12px}
+}
+@media(max-width:360px) and (orientation:portrait){
+ body:not(.immersive) .brand strong{font-size:14px;letter-spacing:2px}
+ body:not(.immersive) .brand small{letter-spacing:1px}
+ body:not(.immersive) .brand-mark{width:26px}
+}
+@media(max-height:500px) and (orientation:landscape){.photo-controls{flex-wrap:wrap}}
