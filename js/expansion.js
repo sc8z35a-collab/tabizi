@@ -698,6 +698,7 @@ window.createWildfront = function (ctx) {
     lightningLight.intensity=$('motion-toggle').checked?0:weather.flash*5;$('lightning-overlay').style.opacity=weather.flash*.17;
     if(weather.auto&&weather.age>110&&!(boss&&!boss.dead)){const cycle=['clear','rain','storm','fog'];setWeather(cycle[(cycle.indexOf(weather.type)+1)%4]);}
   }
+  document.querySelectorAll('[data-weather]').forEach(b=>b.classList.toggle('selected',b.dataset.weather===weather.type));
   function eventsUI(){if(dead)return;openDialog('events-dialog');}
   $('events-button').addEventListener('click',eventsUI);$('event-shortcut').addEventListener('click',eventsUI);$('auto-weather').addEventListener('change',e=>weather.auto=e.target.checked);
   document.querySelectorAll('[data-weather]').forEach(b=>b.addEventListener('click',()=>{setWeather(b.dataset.weather);$('events-dialog').close();}));
@@ -720,8 +721,9 @@ window.createWildfront = function (ctx) {
     $('dodge-button').style.setProperty('--cooldown',(dodgeCD/.85*100)+'%');
     $('sense-button').classList.toggle('active',senseTime>0);$('sense-button').disabled=senseCD>0;
     $('attack-button').disabled=!mounted&&stamina<8;$('dodge-button').disabled=!!mounted||stamina<25;
-    $('interact-button').hidden=!mounted&&!entities.some(v=>Math.hypot(v.g.position.x-state.x,v.g.position.z-state.z)<(v.type==='plane'?8:5));
-    $('interact-button').querySelector('use').setAttribute('href',mounted?.type==='plane'?'#i-plane':'#i-car');
+    const boardable=mounted||entities.filter(v=>Math.hypot(v.g.position.x-state.x,v.g.position.z-state.z)<(v.type==='plane'?8:5)).sort((a,b)=>a.g.position.distanceTo(player.position)-b.g.position.distanceTo(player.position))[0];
+    $('interact-button').hidden=!boardable;
+    $('interact-button').querySelector('use').setAttribute('href',boardable?.type==='plane'?'#i-plane':'#i-car');
     $('interact-button').setAttribute('aria-label',mounted?'降りる E':'乗る E');
     document.querySelectorAll('#potion-pips b').forEach((p,i)=>p.classList.toggle('filled',i<potions));
     document.querySelectorAll('#combo-pips b').forEach((p,i)=>p.classList.toggle('filled',i<combo));
@@ -742,9 +744,9 @@ window.createWildfront = function (ctx) {
     scenery.update(sim);
     hud(dt);
   }
-  function drawMap(c,mx,mz,large){
+  function drawMap(c,mx,mz,large,drawLabel){
     c.save();
-    for(const site of scenery.sites){const x=mx(site.x),z=mz(site.z);c.fillStyle=site.type==='ruins'?'#b3c8c1':'#d8be8c';c.fillRect(x-2,z-2,4,4);if(large){c.font='11px sans-serif';c.textAlign='center';c.fillText(site.name,x,z-8);}}
+    for(const site of scenery.sites){const x=mx(site.x),z=mz(site.z);c.fillStyle=site.type==='ruins'?'#b3c8c1':'#d8be8c';c.fillRect(x-2,z-2,4,4);if(large&&drawLabel)drawLabel(site.name,x,z);}
     c.restore();
     for(const v of entities){c.fillStyle=v.type==='car'?'#e8d8a6':'#b6dbe4';c.font=large?'20px serif':'12px serif';c.textAlign='center';c.fillText(v.type==='car'?'▣':'✦',mx(v.g.position.x),mz(v.g.position.z));}for(const e of enemies){if(e.dead)continue;c.beginPath();c.fillStyle=e.type==='boss'?'#ffbd76':e.type==='creatures'?'#e79576':'#bbcd74';c.arc(mx(e.x),mz(e.z),e.type==='boss'?5:large?3:2,0,Math.PI*2);c.fill();}}
   const api={setPerformanceMode,setSceneryDensity:scenery.setDensity,getSceneryStats:scenery.stats,getObjectViews:()=>scenery.views.map(v=>({...v,eye:[...v.eye],target:[...v.target]})),sceneryClearance:scenery.clearance,get mounted(){return mounted;},get dead(){return dead;},get windSpeed(){return weather.type==='storm'?1.85:1;},pauseInputs(){ascendHeld=descendHeld=false;cancelAttack();moveX=moveZ=0;},prepareMove,sense,drive,update,interact,attack,dodge,heal,drawMap,respawn,setWeather,startBoss,spawnGroup,placeVehicle,getState:()=>({stamina,combo,chargeTime,focusTime,empowered,perfectDodges,senseTime,senseCD,pickups:pickups.length,collected,dodgeCD,attackCD,hp,potions,kills,bossWins,dead,mode:mounted?mounted.type:'foot',vehicleSpeed:mounted?mounted.speed:0,altitude:mounted?mounted.lift:0,weather:weather.type,weatherIntensity:weather.intensity,projectiles:projectiles.length,enemies:enemies.filter(e=>!e.dead).map(e=>({type:e.type,hp:e.hp,x:e.x,z:e.z,aggro:e.aggro,windup:e.windup})),boss:boss?{hp:boss.hp,phase:boss.phase,dead:boss.dead}:null,car:{x:car.g.position.x,z:car.g.position.z},plane:{x:plane.g.position.x,z:plane.g.position.z}})};
