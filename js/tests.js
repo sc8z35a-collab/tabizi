@@ -18,6 +18,12 @@
     }
     const w = iframe.contentWindow, d = w.document;
     const state = () => w.verdantWorld.getState();
+    // dialog.close queues its close event for a rendering task. Await that event,
+    // not a wall-clock delay that can expire first on a software WebGL renderer.
+    const closeDialog = id => new Promise(resolve => {
+      const dialog=d.getElementById(id);
+      dialog.addEventListener('close',resolve,{once:true});dialog.close();
+    });
     const frames = async n => {for (let i = 0; i < n; i++) await new Promise(resolve => w.requestAnimationFrame(resolve));};
     const key = (type, code) => w.dispatchEvent(new w.KeyboardEvent(type, {code, bubbles:true}));
     assert(state().grass === 98000 && state().triangles > 100000, 'Real 3D terrain and instanced grass are rendered');
@@ -47,13 +53,13 @@
     assert(d.getElementById('world-time').textContent === '19:00', 'Time slider updates the world clock and lighting controls');
     const hud = d.getElementById('hud-toggle');hud.checked=false;hud.dispatchEvent(new w.Event('change'));
     assert(d.body.classList.contains('clean-hud'), 'Scenery mode hides optional HUD');hud.checked=true;hud.dispatchEvent(new w.Event('change'));
-    d.getElementById('settings-dialog').close();await wait(200);
+    await closeDialog('settings-dialog');
     assert(!state().paused, 'Closing settings resumes exploration');
     d.getElementById('map-button').click();
     assert(d.getElementById('map-dialog').open && d.getElementById('map-legend').children.length === 3, 'Map opens with all three actual landmarks');
-    d.getElementById('map-dialog').close();await wait(100);
+    await closeDialog('map-dialog');
     d.getElementById('guide-button').click();
-    assert(d.getElementById('guide-dialog').open, 'Travel guide opens');d.getElementById('guide-dialog').close();
+    assert(d.getElementById('guide-dialog').open, 'Travel guide opens');await closeDialog('guide-dialog');
     const previous = localStorage.getItem('verdant-wilds-v1');w.dispatchEvent(new w.Event('pagehide'));
     assert(localStorage.getItem('verdant-wilds-v1') === previous, 'Self-test mode does not overwrite player save data');
     w.verdantWorld.expansion.setSceneryDensity(1);
@@ -82,7 +88,7 @@
     assert(extreme.grassTarget===98000 && extreme.terrainTriangles===460800, 'High quality restores grass capacity and detailed terrain');
     setQuality(0);w.verdantWorld.test.flushGrass();
     assert(state().graphics.activeGrass===30000 && !state().graphics.grassPending, 'Returning to Performance drains pending grass work safely');
-    d.getElementById('settings-dialog').close();await wait(200);
+    await closeDialog('settings-dialog');
     const sample=w.verdantWorld.test.sampleFrame;
     w.verdantWorld.test.resetFrameWindow();
     for(let i=0;i<1500;i++)sample(.04);

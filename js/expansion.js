@@ -87,7 +87,15 @@ window.createWildfront = function (ctx) {
   // Spatially batched scenery: shared geometry/materials, local bounds and distance culling.
   // These are decorative objects; they deliberately do not alter combat or vehicle collision.
   function createScenery() {
-    const groups = new Map(), batches = new Map(), counts = {}, sites = [];
+    const groups = new Map(), batches = new Map(), counts = {}, sites = [], views = [];
+    const craftSites = [
+      {id:'well',name:'旅人の井戸',x:-23,z:29,type:'well'},
+      {id:'market',name:'風の市',x:22,z:21,type:'market'},
+      {id:'wagon',name:'街道の幌馬車',x:-30,z:-27,type:'wagon'},
+      {id:'apiary',name:'蜜とハーブの庭',x:88,z:-65,type:'apiary'},
+      {id:'forge',name:'森の鍛冶工房',x:-61,z:0,type:'forge'},
+      {id:'shrine',name:'星詠みの祠',x:-93,z:-105,type:'shrine'}
+    ];
     const transform = new T.Object3D(), tint = new T.Color();
     let scenerySeed = 20260919, density = .4, range = 460, tick = 0;
     const rng = () => { scenerySeed = (scenerySeed * 1664525 + 1013904223) >>> 0; return scenerySeed / 4294967296; };
@@ -122,14 +130,15 @@ window.createWildfront = function (ctx) {
     const fernMat = foliage.clone(); fernMat.side = T.DoubleSide;
     shapes.fern = [fern, fernMat, false];
     function add(kind,x,y,z,sx,sy,sz,rx=0,ry=0,rz=0,color=null,detail=false) {
-      const cx = Math.floor(x/240), cz = Math.floor(z/240), cell = `${cx}:${cz}:${detail}`;
+      const size = typeof detail === 'string' ? 40 : 240;
+      const cx = Math.floor(x/size), cz = Math.floor(z/size), cell = `${cx}:${cz}:${detail}`;
       if (!groups.has(cell)) {
-        const g = new T.Group(); g.position.set(cx*240,0,cz*240); scene.add(g);
-        g.updateMatrix();g.matrixAutoUpdate=false;groups.set(cell,{g,x:cx*240+120,z:cz*240+120,detail});
+        const g = new T.Group(); g.position.set(cx*size,0,cz*size); scene.add(g);
+        g.updateMatrix();g.matrixAutoUpdate=false;groups.set(cell,{g,x:cx*size+size/2,z:cz*size+size/2,detail,size});
       }
       const key = `${cell}:${kind}`;
       if (!batches.has(key)) batches.set(key,{cell,kind,items:[],detail});
-      transform.position.set(x-cx*240,y,z-cz*240); transform.rotation.set(rx,ry,rz); transform.scale.set(sx,sy,sz); transform.updateMatrix();
+      transform.position.set(x-cx*size,y,z-cz*size); transform.rotation.set(rx,ry,rz); transform.scale.set(sx,sy,sz); transform.updateMatrix();
       batches.get(key).items.push({matrix:transform.matrix.clone(),color:color||'#ffffff'});
     }
     function record(kind) { counts[kind] = (counts[kind]||0)+1; }
@@ -138,6 +147,7 @@ window.createWildfront = function (ctx) {
       for(let attempt=0;attempt<80;attempt++) {
         const near=i<total*.7, x=(rng()-.5)*(near?660:2350), z=(rng()-.5)*(near?720:2350)-(near?110:0);
         const path=14*Math.sin(z*.019)-4;
+        if(craftSites.some(s=>Math.hypot(x-s.x,z-s.z)<11))continue;
         if(lakeDistance(x,z)<112 || height(x,z)<-1 || (Math.abs(x-path)<5 && z>-215 && z<100) || Math.hypot(x,z-62)<22) continue;
         if(Math.hypot(x+28,z+178)<19 || Math.hypot(x+258,z+346)<26 || Math.hypot(x-158,z+139)<18) continue;
         return {x,z,y:height(x,z)};
@@ -241,12 +251,207 @@ window.createWildfront = function (ctx) {
       for(let j=0;j<9;j++)box(arm,plaster,.48,1.9+j*.47,0,1.25,.3,.09);
     }
     sphere(rotor,wood,0,0,.08,.4);record('windmills');
+    // Close-range craft kit. Shared PBR surfaces and geometry keep thousands of
+    // modeled parts in spatial instance batches, not thousands of draw calls.
+    function craftTexture(kind) {
+      const cv=document.createElement('canvas');cv.width=cv.height=1024;
+      const c=cv.getContext('2d'),im=c.createImageData(1024,1024);
+      for(let y=0;y<1024;y++)for(let x=0;x<1024;x++) {
+        const n=hashDetail(x,y),grain=Math.sin(x*.24+Math.sin(y*.014)*2.3+Math.sin(y*.04)*.4);
+        const value=kind==='wood'?154+grain*24+Math.sin(x*.83+y*.003)*13+n*18:
+          kind==='cloth'?188+(x%6<2?-24:6)+(y%6<2?-24:6)+n*10:
+          157+Math.sin(x*.027+Math.sin(y*.031)*2)*19+n*38;
+        const i=(y*1024+x)*4;im.data[i]=im.data[i+1]=im.data[i+2]=value;im.data[i+3]=255;
+      }
+      c.putImageData(im,0,0);
+      if(kind==='wood')for(let i=0;i<9;i++){c.strokeStyle='#453c2c50';c.lineWidth=2;c.beginPath();c.ellipse(65+i*112,170+(i%3)*260,11,45,.06,0,Math.PI*2);c.stroke();}
+      const tex=new T.CanvasTexture(cv);tex.wrapS=tex.wrapT=T.RepeatWrapping;
+      tex.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());return tex;
+    }
+    function hashDetail(x,y){const n=Math.sin(x*12.9898+y*78.233)*43758.5453;return n-Math.floor(n);}
+    const grain=craftTexture('wood'),weave=craftTexture('cloth'),mineral=craftTexture('mineral');
+    function surface(color,bump,scale,metalness=0,roughness=.8){const mat=M(color,metalness,roughness);mat.bumpMap=bump;mat.bumpScale=scale;return mat;}
+    const oak=surface('#a07b4d',grain,.014),endgrain=surface('#c3a274',stoneBump,.025);
+    const linen=surface('#e5d5ae',weave,.022,0,.94);linen.side=T.DoubleSide;
+    const ceramic=surface('#ad6546',mineral,.018,.08,.36);
+    const ashlar=surface('#a4a594',mineral,.022),copper=surface('#a17b51',mineral,.018,.73,.34);
+    const iron=surface('#4b5550',mineral,.025,.78,.38);
+    const ropeMat=surface('#bca67d',weave,.035),herb=M('#507647',0,.87);
+    const glow=new T.MeshStandardMaterial({color:'#c5f4e2',emissive:'#5bcdb2',emissiveIntensity:.8,roughness:.22,metalness:.35});
+    function roundedCube(){const s=new T.Shape(),r=.05;s.moveTo(-.5+r,-.5+r);s.lineTo(.5-r,-.5+r);s.lineTo(.5-r,.5-r);s.lineTo(-.5+r,.5-r);s.closePath();const g=new T.ExtrudeGeometry(s,{depth:1-2*r,steps:1,bevelEnabled:true,bevelSegments:2,bevelThickness:r,bevelSize:r});g.translate(0,0,-.5+r);return g;}
+    const cube=roundedCube(),cylinder=new T.CylinderGeometry(1,1,1,24),ring=new T.TorusGeometry(1,.045,6,48);
+    const profile=[[0,0],[.21,0],[.36,.08],[.47,.42],[.40,.70],[.26,.82],[.26,.92],[.30,.95],[.30,1],[.23,1],[.22,.90],[.22,.84],[.34,.68],[.40,.42],[.29,.12],[0,.12]].map(p=>new T.Vector2(...p));
+    const leaf=new T.SphereGeometry(1,8,5);
+    Object.assign(shapes,{
+      plank:[cube,oak,true],cutwood:[cylinder,endgrain,true],iron:[cube,iron,true],copper:[cube,copper,true],
+      masonry:[cube,ashlar,true],tile:[cube,slate,true],cloth:[cube,linen,true],
+      hoop:[ring,iron,true],rope:[ring,ropeMat,false],cord:[cylinder,ropeMat,false],
+      nail:[new T.SphereGeometry(1,8,6),iron,false],vessel:[new T.LatheGeometry(profile,32),ceramic,true],
+      herb:[leaf,herb,false],produce:[new T.SphereGeometry(1,12,8),petal,true],
+      jewel:[new T.OctahedronGeometry(1,0),glow,true],lit:[new T.SphereGeometry(1,10,8),amber,false]
+    });
+    // Site-local coordinates can be rotated without losing the pitch of beams/tiles.
+    function composer(x,y,z,angle=0){const c=Math.cos(angle),s=Math.sin(angle),q=new T.Quaternion().setFromAxisAngle(new T.Vector3(0,1,0),angle),e=new T.Euler(),r=new T.Quaternion();
+      return (kind,dx,dy,dz,sx,sy,sz,rx=0,ry=0,rz=0,color=null,micro=false)=>{
+        r.setFromEuler(e.set(rx,ry,rz));r.premultiply(q);e.setFromQuaternion(r);
+        add(kind,x+dx*c+dz*s,y+dy,z+dz*c-dx*s,sx,sy,sz,e.x,e.y,e.z,color,micro?'micro':'craft');
+      };
+    }
+    function beam(p,kind,a,b,width=.07,color=null,micro=false){const v=new T.Vector3(...b).sub(new T.Vector3(...a)),q=new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),v.clone().normalize()),e=new T.Euler().setFromQuaternion(q);p(kind,(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2,width,v.length(),width,e.x,e.y,e.z,color,micro);}
+    function barrel(p,x,y,z,s=1){
+      for(let i=0;i<16;i++){const a=i*Math.PI/8;p('plank',x+Math.cos(a)*s*.43,y+s*.55,z+Math.sin(a)*s*.43,s*.17,s*1.06,s*.10,0,-a-Math.PI/2,0,i%3===0?'#cab68c':'#ffffff');}
+      for(const h of [.16,.5,.89])p('hoop',x,y+h*s,z,s*.47,s*.47,s*.9,Math.PI/2);
+      p('cutwood',x,y+1.09*s,z,.42*s,.055*s,.42*s);
+      for(let i=-2;i<=2;i++)p('iron',x+i*.14*s,y+1.12*s,z,.009*s,.005*s,.65*s,0,0,0,null,true);
+      p('nail',x+.15*s,y+1.13*s,z,.055*s,.014*s,.055*s);record('craftedBarrels');
+    }
+    function crate(p,x,y,z,s=1){
+      for(let i=0;i<5;i++){const h=y+.1*s+i*.17*s;for(const side of [-1,1]){p('plank',x,h,z+side*.43*s,s,.145*s,.06*s);p('plank',x+side*.47*s,h,z,.06*s,.145*s,.86*s);}}
+      for(const dx of [-.43,.43])for(const dz of [-.4,.4])p('plank',x+dx*s,y+.45*s,z+dz*s,.075*s,.97*s,.075*s);
+      for(const dz of [-.47,.47]){beam(p,'plank',[x-.43*s,y+.05*s,z+dz*s],[x+.43*s,y+.88*s,z+dz*s],.085*s);for(const dx of [-.4,.4])for(const dy of [.12,.78])p('nail',x+dx*s,y+dy*s,z+dz*s,.023*s,.023*s,.014*s,0,0,0,null,true);}
+      p('plank',x,y+.015*s,z,.93*s,.05*s,.85*s);record('craftedCrates');
+    }
+    function pot(p,x,y,z,s=1,tint='#ffffff'){p('vessel',x,y,z,s,s,s,0,0,0,tint);p('rope',x,y+s*.87,z,s*.27,s*.27,s*.27,Math.PI/2);record('pottery');}
+    function lantern(p,x,y,z,s=1){
+      p('lit',x,y,z,.14*s,.25*s,.14*s);p('iron',x,y-.3*s,z,.4*s,.075*s,.4*s);
+      p('copper',x,y+.28*s,z,.42*s,.09*s,.42*s);
+      for(const dx of [-1,1])for(const dz of [-1,1])p('iron',x+dx*.16*s,y,z+dz*.16*s,.035*s,.55*s,.035*s);
+      p('hoop',x,y+.46*s,z,.12*s,.12*s,.12*s);record('craftedLanterns');
+    }
+    function roof(p,x,y,z,w,d){
+      for(const side of [-1,1]){
+        const center=side*w*.26;
+        p('plank',x+center,y+(w*.5-Math.abs(center))*Math.tan(.5)-.07,z,w*.60,.14,d+.4,0,0,-side*.5);
+        for(const dz of [-d*.43,d*.43])beam(p,'plank',[x,y+w*.5*Math.tan(.5)-.17,z+dz],[x+side*w*.53,y-.15,z+dz],.13);
+        for(let row=0;row<5;row++)for(let col=0;col<Math.ceil(d/.38);col++){
+          const dx=side*(row+.5)*w*.105;
+          p('tile',x+dx,y+(w*.5-Math.abs(dx))*Math.tan(.5)+.035,z-d/2+(col+.5)*.38+(row%2)*.04,w*.14,.075,.41,0,0,-side*.5,['#b2bcb4','#dae1d4','#819d9d'][(row+col)%3]);
+        }
+      }
+      p('copper',x,y+w*.5*Math.tan(.5)+.065,z,.15,.15,d+.3);record('tiledRoofs');
+    }
+    function flowers(p,x,y,z,s=1){
+      for(let j=0;j<7;j++){const a=j*2.4,h=(.4+(j%3)*.18)*s,dx=Math.cos(a)*.18*s,dz=Math.sin(a)*.18*s;
+        beam(p,'stem',[x,y,z],[x+dx,y+h,z+dz],.018*s);
+        for(let k=0;k<3;k++)p('herb',x+dx*.5+Math.cos(a+k)*.08*s,y+h*(.3+k*.16),z+dz*.5,.16*s,.025*s,.055*s,0,a+k,.25);
+        for(let k=0;k<5;k++){const b=k*Math.PI*2/5;p('flower',x+dx+Math.cos(b)*.065*s,y+h,z+dz+Math.sin(b)*.065*s,.065*s,.025*s,.04*s,0,-b,0,j%2?'#ccadd7':'#fff0b1');}
+        p('produce',x+dx,y+h+.015*s,z+dz,.025*s,.025*s,.025*s,0,0,0,'#cca651');
+      }record('herbPlanters');
+    }
+    function platform(p,x,z,y,w,d){
+      // A continuous ground-reaching plinth replaces four floating corner stilts.
+      let base=y;for(let dx=-w/2;dx<=w/2;dx+=.7)for(let dz=-d/2;dz<=d/2;dz+=.7)base=Math.min(base,height(x+dx,z+dz));
+      const depth=y-base+.75;
+      p('masonry',0,-depth/2,0,w,depth,d,0,0,0,'#858d78');
+      const boards=Math.ceil(w/.42),bw=w/boards;
+      for(let i=0;i<boards;i++)p('plank',-w/2+(i+.5)*bw,.015,0,bw-.018,.12,d);
+      for(const side of [-1,1]){
+        p('plank',side*(w/2+.01),-.10,0,.11,.23,d+.12);
+        p('plank',0,-.10,side*(d/2+.01),w,.23,.11);
+        for(let i=0;i<Math.ceil(w/.85);i++){const dx=-w/2+(i+.5)*w/Math.ceil(w/.85),h=Math.max(.35,y-height(x+dx,z+side*d/2)+.5);p('masonry',dx,-h/2-.12,side*(d/2-.13),w/Math.ceil(w/.85)-.035,h,.31,0,0,0,i%2?'#b9ba9f':'#999f8b');}
+      }
+      const rise=Math.max(.45,y-height(x,z+d/2+1.3)),steps=Math.min(10,Math.max(3,Math.ceil(rise/.22)));
+      for(let i=0;i<steps;i++){const dz=d/2+.2+i*.30,top=-rise*(i+1)/(steps+1),bottom=height(x,z+dz)-y-.45;
+        p('masonry',0,(top+bottom)/2,dz,2.1,Math.max(.1,top-bottom),.36,0,0,0,'#bab9a3');p('plank',0,top+.035,dz,2.16,.07,.37);
+      }
+    }
+    for(const s of craftSites){
+      // Raised foundations use the highest sampled corner, never a floating ground-level slab.
+      const w=s.type==='market'?8.6:s.type==='shrine'?6.8:7.6,d=s.type==='wagon'?9.4:6.6;
+      let y=height(s.x,s.z);for(let dx=-w/2;dx<=w/2;dx+=.7)for(let dz=-d/2;dz<=d/2;dz+=.7)y=Math.max(y,height(s.x+dx,s.z+dz));y+=.38;
+      s.y=y;s.radius=Math.hypot(w,d)/2+1;sites.push({...s});record(s.type);
+      const p=composer(s.x,y,s.z);platform(p,s.x,s.z,y,w,d);
+      if(s.type==='well'){
+        for(let row=0;row<5;row++)for(let i=0;i<18;i++){const a=(i+(row%2)*.5)*Math.PI/9;p('masonry',Math.cos(a)*1.25,.18+row*.31,Math.sin(a)*1.25,.44,.29,.39,0,-a-Math.PI/2,0,['#ffffff','#c9c4aa','#e0ded2'][i%3]);}
+        for(const side of [-1,1]){p('plank',side*1.8,2.2,0,.26,4.4,.3);beam(p,'plank',[side*1.8,2.9,0],[side*.9,4,0],.16);for(const h of [.35,1,3.5])p('nail',side*1.8,h,.17,.055,.055,.025,0,0,0,null,true);}
+        beam(p,'cutwood',[-1.9,2.5,0],[2.1,2.5,0],.16);
+        for(let j=0;j<28;j++)p('rope',-.36+j*.027,2.5,0,.10,.10,.10,0,Math.PI/2,0,null,true);
+        beam(p,'cord',[0,2.47,0],[0,.35,0],.025);p('hoop',2.15,2.5,0,.38,.38,.38,0,Math.PI/2);
+        roof(p,0,4.15,0,4.5,3.4);barrel(p,2.2,0,1.8,.65);pot(p,-2.1,0,1.9,.8);flowers(p,-2.1,.65,1.9,.7);lantern(p,-1.8,2.75,.48,.65);
+        p('metal',0,.10,0,2,.025,2,0,0,0,'#182f2d');
+      }else if(s.type==='market'){
+        for(const dx of [-2.8,2.8])for(const dz of [-1.8,1.8]){p('plank',dx,1.85,dz,.14,3.7,.14);beam(p,'plank',[dx,2.5,dz],[dx*.68,3.48,dz],.10);}
+        for(let i=0;i<18;i++){const x=-3.05+i*.36;p('cloth',x,3.55,0,.35,.075,4.45,-.10,0,0,i%3===0?'#4e8f89':'#fff1d0');p('cloth',x,3.20,2.19,.35,.38,.07,0,0,0,i%3===0?'#4e8f89':'#fff1d0');}
+        for(const dz of [-2,2])beam(p,'plank',[-3.1,3.65,dz],[3.1,3.65,dz],.12);
+        for(let i=0;i<17;i++)p('plank',-2.72+i*.34,1.08,1.32,.325,.10,1.1);
+        for(const dx of [-2.7,0,2.7])p('plank',dx,.52,1.32,.13,1.02,.8);
+        for(let b=0;b<4;b++){const x=-2.1+b*1.4;crate(p,x,1.14,1.3,.67);for(let j=0;j<12;j++)p('produce',x+(j%4-1.5)*.12,1.59+Math.floor(j/8)*.10,1.3+(Math.floor(j/4)%2-.5)*.23,.095,.085,.095,0,0,0,['#b94626','#d3b954','#758946','#9c728c'][b]);}
+        for(let j=0;j<5;j++){pot(p,-2.5+j*1.05,.05,-1,.52+j%2*.17,j%2?'#b7b9a0':'#ffffff');flowers(p,-2.5+j*1.05,.5,-1,.75);}
+        barrel(p,3.4,0,-1,.82);crate(p,-3.7,0,.5,.85);lantern(p,2.8,2.65,1.8,.8);
+      }else if(s.type==='wagon'){
+        for(let i=0;i<13;i++)p('plank',0,.92,-2.2+i*.35,2.65,.14,.33);
+        for(const side of [-1,1])for(let i=0;i<5;i++)p('plank',side*1.32,1.1+i*.18,0,.10,.16,4.55);
+        for(const z of [-1.55,1.55]){
+          beam(p,'iron',[-1.85,.74,z],[1.85,.74,z],.13);
+          for(const side of [-1,1]){const x=side*1.63;p('hoop',x,.77,z,.75,.75,1.6,0,Math.PI/2);p('rope',x,.77,z,.69,.69,2,0,Math.PI/2);p('cutwood',x,.77,z,.16,.32,.16,0,0,Math.PI/2);
+            for(let j=0;j<12;j++){const a=j*Math.PI/6;beam(p,'plank',[x,.77,z],[x,.77+Math.cos(a)*.67,z+Math.sin(a)*.67],.055);}record('spokedWheels');}
+        }
+        for(let i=0;i<15;i++){const a=i*Math.PI/15,b=(i+1)*Math.PI/15,mid=(a+b)/2;p('cloth',Math.cos(mid)*1.47,1.96+Math.sin(mid)*1.35,0,.32,.055,4.65,0,0,mid-Math.PI/2,i%3===0?'#b08b62':'#fff5d8');}
+        for(const z of [-2.32,-1.15,0,1.15,2.32])for(let i=0;i<15;i++){const a=i*Math.PI/15,b=(i+1)*Math.PI/15;beam(p,'cord',[Math.cos(a)*1.49,1.96+Math.sin(a)*1.37,z],[Math.cos(b)*1.49,1.96+Math.sin(b)*1.37,z],.035,null,true);}
+        for(const side of [-1,1])beam(p,'plank',[side*.95,.84,2.1],[side*.72,.68,4.25],.13);
+        crate(p,0,1.02,-1,.8);barrel(p,-.62,1.01,.35,.7);pot(p,.68,1.02,.5,.68);lantern(p,1.42,1.7,2.25,.75);
+        crate(p,2.5,0,1.6,.8);barrel(p,-2.4,0,1.1,.8);
+      }else if(s.type==='apiary'){
+        for(let i=0;i<3;i++){const x=-1.8+i*1.8;p('plank',x,.3,-.8,1.25,.12,1.25);for(const side of [-1,1])p('plank',x+side*.42,.2,-.8,.12,.4,.12);
+          for(let row=0;row<4;row++){p('plank',x,.52+row*.29,-.8,1.1,.27,1.03,0,0,0,['#ffe6aa','#aec7b1','#9bbfc2'][i]);p('iron',x,.52+row*.29,-.265,.30,.04,.035);}
+          p('iron',x,.44,-.255,.5,.065,.035);p('plank',x,.39,-.1,.65,.055,.35);roof(p,x,1.38,-.8,1.55,1.4);record('beehives');
+        }
+        for(let i=0;i<7;i++){const x=-2.4+i*.8;pot(p,x,.05,1.45,.6,i%2?'#bec6b1':'#ffffff');flowers(p,x,.52,1.45,.9);}
+        p('plank',0,.9,2.45,3.5,.12,.75);for(const x of [-1.5,1.5])p('plank',x,.45,2.45,.12,.9,.6);
+        for(let i=0;i<9;i++)pot(p,-1.25+i*.31,.965,2.45,.25,'#daa45e');barrel(p,3.35,0,0,.85);
+      }else if(s.type==='forge'){
+        for(const x of [-2.4,2.4])for(const z of [-2,2])p('plank',x,1.8,z,.18,3.6,.18);
+        roof(p,0,3.45,0,5.5,4.8);
+        for(let row=0;row<4;row++)for(let col=0;col<7;col++)p('masonry',-2.2+col*.72,.23+row*.43,-2.12,.70,.40,.34,0,0,0,row%2?'#a2a59c':'#e1d9c2');
+        p('plank',1.2,.95,.35,2.35,.22,1.05);for(const dx of [.3,2.1])for(const dz of [0,.7])p('plank',dx,.43,dz,.13,.86,.13);
+        p('cutwood',-.9,.44,1.05,.48,.88,.48);p('iron',-.9,.97,1.05,.65,.20,.48);p('iron',-.9,1.17,1.05,.34,.28,.30);p('iron',-.9,1.37,1.05,1.08,.15,.4);
+        beam(p,'iron',[-1.35,1.37,1.05],[-1.8,1.31,1.05],.12);
+        p('plank',1.15,1.98,-.1,2.2,.11,.15);
+        for(const x of [.2,2.1])beam(p,'plank',[x,.9,-.1],[x,2.05,-.1],.085);
+        for(let i=0;i<6;i++){const x=.25+i*.33;beam(p,'plank',[x,1.38,.04],[x,1.87,.04],.06);p('iron',x,1.91,.04,.23,.12,.12);p('nail',x,1.98,.03,.028,.028,.05,0,0,0,null,true);}
+        // Brick hearth, charcoal, chimney and iron grate make this a working forge.
+        for(let row=0;row<5;row++)for(let i=0;i<4;i++)p('masonry',-1.35+(i%2)*.55,.18+row*.26,-1.45+Math.floor(i/2)*.4,.52,.24,.38,0,0,0,row%2?'#93816c':'#b29b7e');
+        p('iron',-1.08,1.39,-1.25,1.18,.10,.95);
+        for(let i=0;i<12;i++)p('stone',-1.4+(i%4)*.21,1.5,-1.5+Math.floor(i/4)*.2,.13,.09,.12,0,i,0,'#303532');
+        for(let i=0;i<5;i++)p('lit',-1.38+i*.15,1.48,-1.18,.06,.03,.06);
+        for(let row=0;row<9;row++)p('masonry',-1.1,1.8+row*.34,-1.82,.7,.32,.55,0,0,0,'#a09887');
+        for(let i=0;i<7;i++){p('cutwood',-2.3+(i%2)*.4,.18+Math.floor(i/2)*.27,-.5,.16,1.3,.16,Math.PI/2);}
+        barrel(p,3.15,0,.2,.85);crate(p,2.8,0,2,.72);lantern(p,-2.4,2.6,2,.9);pot(p,1.75,1.1,.4,.36);
+      }else if(s.type==='shrine'){
+        for(let row=0;row<3;row++)p('masonry',0,.15+row*.25,0,4.8-row*.55,.24,3.8-row*.55);
+        for(const side of [-1,1]){
+          p('masonry',side*1.7,.9,-.65,.9,.35,.9);
+          for(let row=0;row<7;row++)p('masonry',side*1.7,1.2+row*.36,-.65,.58,.34,.60,0,row%2*.015);
+          p('masonry',side*1.7,3.72,-.65,.94,.30,.92);
+          for(let j=0;j<6;j++)p('copper',side*1.7+(j-2.5)*.07,3.74,-.17,.027,.15,.025,0,0,.4,null,true);
+        }
+        for(let i=0;i<13;i++){const a=i*Math.PI/12;p('masonry',Math.cos(a)*1.7,3.84+Math.sin(a)*1.45,-.65,.48,.42,.72,0,0,a-Math.PI/2);}
+        p('masonry',0,1.2,0,1.3,.75,1.1);p('copper',0,1.64,0,1.4,.10,1.2);p('jewel',0,2.25,0,.43,.75,.43);
+        p('hoop',0,2.25,-.05,.9,.9,.9);p('hoop',0,2.25,-.05,.74,.74,.74,0,.5);
+        for(let i=0;i<12;i++){const a=i*Math.PI/6;p('jewel',Math.cos(a)*.9,2.25+Math.sin(a)*.9,-.05,.04,.07,.04,0,0,-a,null,true);}
+        for(const side of [-1,1]){lantern(p,side*2.15,.345,1.25,.85);pot(p,side*2.15,.05,-1.8,.7);flowers(p,side*2.15,.65,-1.8,.85);}
+      }
+      const offsets={well:[7,5,9],market:[8,5,10],wagon:[8,4.8,10],apiary:[7,4.5,9],forge:[8,4.8,10],shrine:[7,4.3,9]};
+      const close={well:{eye:[3.9,2.9,4.3],at:[0,1.9,0]},market:{eye:[4.2,2.65,5],at:[0,1.65,1]},wagon:{eye:[3.5,1.95,4.6],at:[.4,1.3,1]},apiary:{eye:[3.3,2.6,4.4],at:[0,1.15,0]},forge:{eye:[3.4,2.6,4.6],at:[-.4,1.2,.5]},shrine:{eye:[3.2,2.9,4.8],at:[0,2.3,0]}};
+      const view=(id,label,eye,at)=>views.push({id,name:s.name+' · '+label,site:s.id,eye:[s.x+eye[0],y+eye[1],s.z+eye[2]],target:[s.x+at[0],y+at[1],s.z+at[2]]});
+      view(s.id,s.type==='apiary'?'庭全景':'全景',offsets[s.type],[0,1.6,0]);view(s.id+'-detail','細部',close[s.type].eye,close[s.type].at);
+    }
+    // Existing settlements gain the same kit rather than remaining empty boxes.
+    for(const s of sites.filter(s=>['cabins','camp','ruins'].includes(s.type))){const y=height(s.x,s.z),p=composer(s.x,y,s.z);
+      barrel(p,-5,.1,2,.85);crate(p,4.7,.1,2.3,.8);pot(p,-3.8,.1,3.1,.72);flowers(p,-3.8,.72,3.1,.85);
+      if(s.type==='cabins'){
+        for(const side of [-1,1])for(let row=0;row<6;row++)for(let col=0;col<15;col++)p('tile',side*(.27+row*.57),4.99-row*.298,-2.88+col*.41,.67,.07,.44,0,0,-side*.48,['#9bacad','#c2c8bd','#ffffff'][(row+col)%3]);
+        for(const side of [-1,1]){p('plank',side*1.8,1.35,2.68,1.42,.12,.44);for(let j=0;j<4;j++)pot(p,side*1.8+(j-1.5)*.28,1.41,2.68,.24);}
+        for(let j=0;j<6;j++)p('plank',(j-2.5)*.18,1.2,2.56,.17,2.18,.04);
+        lantern(p,1,2.65,2.9,.6);
+      }
+    }
     const meshes=[];
     for(const batch of batches.values()) {
       const [geo,mat,shadow]=shapes[batch.kind];
       const m=new T.InstancedMesh(geo,mat,batch.items.length);
       batch.items.forEach((item,i)=>{m.setMatrixAt(i,item.matrix);m.setColorAt(i,tint.set(item.color));});
-      m.castShadow=shadow&&!batch.detail;m.receiveShadow=true;m.computeBoundingSphere();m.updateMatrix();m.matrixAutoUpdate=false;
+      m.castShadow=shadow&&(batch.detail===false||batch.detail==='craft');m.receiveShadow=true;m.computeBoundingSphere();m.updateMatrix();m.matrixAutoUpdate=false;
       groups.get(batch.cell).g.add(m);meshes.push({m,total:m.count,detail:batch.detail});
     }
     const instanceCount=meshes.reduce((n,b)=>n+b.total,0);
@@ -254,16 +459,20 @@ window.createWildfront = function (ctx) {
     function update(dt) {
       rotor.rotation.z-=dt*.22;tick+=dt;
       if(tick<.25)return;tick=0;
-      for(const cell of groups.values())cell.g.visible=Math.hypot(state.x-cell.x,state.z-cell.z)<(cell.detail?range*.42:range)+170;
+      for(const cell of groups.values()){
+        const distance=cell.detail==='micro'?70:cell.detail==='craft'?Math.min(range,260):cell.detail?range*.42:range;
+        cell.g.visible=Math.hypot(state.x-cell.x,state.z-cell.z)<distance+cell.size*.71;
+      }
       mill.visible=Math.hypot(state.x-65,state.z+88)<range;
     }
     function setDensity(value) {
+      if(!Number.isFinite(value))return;
       density=clamp(value,.35,1);range=density<.6?460:density<.9?620:900;
-      for(const b of meshes)b.m.count=b.detail?Math.ceil(b.total*density):b.total;
+      for(const b of meshes)b.m.count=b.detail===true?Math.ceil(b.total*density):b.total;
       tick=1;update(0);
     }
     setDensity(Number($('density-select').value));
-    return {update,setDensity,sites,stats:()=>({counts:{...counts},instances:instanceCount,activeInstances:meshes.reduce((n,b)=>n+b.m.count,0),batches:meshes.length,density,range})};
+    return {update,setDensity,sites,views,clearance:(x,z)=>craftSites.some(s=>Math.abs(x-s.x)<(s.type==='market'?4.6:4)&&Math.abs(z-s.z)<(s.type==='wagon'?5:4.7)),stats:()=>({counts:{...counts},instances:instanceCount,activeInstances:meshes.reduce((n,b)=>n+b.m.count,0),visibleInstances:meshes.reduce((n,b)=>n+(b.m.parent.visible?b.m.count:0),0),craftedInstances:meshes.reduce((n,b)=>n+(typeof b.detail==='string'?b.total:0),0),microInstances:meshes.reduce((n,b)=>n+(b.detail==='micro'?b.total:0),0),visibleMicroInstances:meshes.reduce((n,b)=>n+(b.detail==='micro'&&b.m.parent.visible?b.total:0),0),batches:meshes.length,density,range,views:views.length})};
   }
   const scenery = createScenery();
   let performanceMode=true;
@@ -538,7 +747,7 @@ window.createWildfront = function (ctx) {
     for(const site of scenery.sites){const x=mx(site.x),z=mz(site.z);c.fillStyle=site.type==='ruins'?'#b3c8c1':'#d8be8c';c.fillRect(x-2,z-2,4,4);if(large){c.font='11px sans-serif';c.textAlign='center';c.fillText(site.name,x,z-8);}}
     c.restore();
     for(const v of entities){c.fillStyle=v.type==='car'?'#e8d8a6':'#b6dbe4';c.font=large?'20px serif':'12px serif';c.textAlign='center';c.fillText(v.type==='car'?'▣':'✦',mx(v.g.position.x),mz(v.g.position.z));}for(const e of enemies){if(e.dead)continue;c.beginPath();c.fillStyle=e.type==='boss'?'#ffbd76':e.type==='creatures'?'#e79576':'#bbcd74';c.arc(mx(e.x),mz(e.z),e.type==='boss'?5:large?3:2,0,Math.PI*2);c.fill();}}
-  const api={setPerformanceMode,setSceneryDensity:scenery.setDensity,getSceneryStats:scenery.stats,get mounted(){return mounted;},get dead(){return dead;},get windSpeed(){return weather.type==='storm'?1.85:1;},pauseInputs(){ascendHeld=descendHeld=false;cancelAttack();moveX=moveZ=0;},prepareMove,sense,drive,update,interact,attack,dodge,heal,drawMap,respawn,setWeather,startBoss,spawnGroup,placeVehicle,getState:()=>({stamina,combo,chargeTime,focusTime,empowered,perfectDodges,senseTime,senseCD,pickups:pickups.length,collected,dodgeCD,attackCD,hp,potions,kills,bossWins,dead,mode:mounted?mounted.type:'foot',vehicleSpeed:mounted?mounted.speed:0,altitude:mounted?mounted.lift:0,weather:weather.type,weatherIntensity:weather.intensity,projectiles:projectiles.length,enemies:enemies.filter(e=>!e.dead).map(e=>({type:e.type,hp:e.hp,x:e.x,z:e.z,aggro:e.aggro,windup:e.windup})),boss:boss?{hp:boss.hp,phase:boss.phase,dead:boss.dead}:null,car:{x:car.g.position.x,z:car.g.position.z},plane:{x:plane.g.position.x,z:plane.g.position.z}})};
+  const api={setPerformanceMode,setSceneryDensity:scenery.setDensity,getSceneryStats:scenery.stats,getObjectViews:()=>scenery.views.map(v=>({...v,eye:[...v.eye],target:[...v.target]})),sceneryClearance:scenery.clearance,get mounted(){return mounted;},get dead(){return dead;},get windSpeed(){return weather.type==='storm'?1.85:1;},pauseInputs(){ascendHeld=descendHeld=false;cancelAttack();moveX=moveZ=0;},prepareMove,sense,drive,update,interact,attack,dodge,heal,drawMap,respawn,setWeather,startBoss,spawnGroup,placeVehicle,getState:()=>({stamina,combo,chargeTime,focusTime,empowered,perfectDodges,senseTime,senseCD,pickups:pickups.length,collected,dodgeCD,attackCD,hp,potions,kills,bossWins,dead,mode:mounted?mounted.type:'foot',vehicleSpeed:mounted?mounted.speed:0,altitude:mounted?mounted.lift:0,weather:weather.type,weatherIntensity:weather.intensity,projectiles:projectiles.length,enemies:enemies.filter(e=>!e.dead).map(e=>({type:e.type,hp:e.hp,x:e.x,z:e.z,aggro:e.aggro,windup:e.windup})),boss:boss?{hp:boss.hp,phase:boss.phase,dead:boss.dead}:null,car:{x:car.g.position.x,z:car.g.position.z},plane:{x:plane.g.position.x,z:plane.g.position.z}})};
   // Test-only deterministic hooks exercise the same production simulation functions.
   if(testing)api.test={beginAttack,releaseAttack,cancelAttack,setStamina(v){stamina=clamp(v,0,100);},setWindup(seconds){const e=targetEnemy();if(e){e.windup=seconds;e.strikeX=state.x;e.strikeZ=state.z;}},teleport(x,z){state.x=x;state.z=z;state.y=height(x,z);player.position.set(x,state.y,z);},step(seconds){for(let t=0;t<seconds;t+=.025)update(.025,false);},drive(seconds,input){for(let t=0;t<seconds;t+=.025)drive(.025,input);},holdAscend(v){ascendHeld=v;},holdDescend(v){descendHeld=v;},hurt(amount){invincible=0;return hurtPlayer(amount);},receiveDamage(amount){return hurtPlayer(amount);},hitNearest(amount){const e=enemies.filter(e=>!e.dead).sort((a,b)=>Math.hypot(a.x-state.x,a.z-state.z)-Math.hypot(b.x-state.x,b.z-state.z))[0];if(e)hitEnemy(e,amount);},reset(){respawn();},clearEnemies(){enemies.forEach(e=>{e.dead=true;e.deathAge=11;});enemyStep(.025);boss=null;$('boss-hud').hidden=true;}};
   if(testing)api.test.prepareBoss=function(){

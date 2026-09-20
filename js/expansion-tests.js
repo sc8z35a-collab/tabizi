@@ -85,6 +85,25 @@
     const motion=d.getElementById('motion-toggle');motion.checked=true;motion.dispatchEvent(new w.Event('change'));
     assert(d.body.classList.contains('reduced-motion'),'Reduced effects setting is applied');
     d.getElementById('settings-dialog').close();
+    // Crafted scenery uses the same production batches and deterministic camera views.
+    const stats=x.getSceneryStats(),views=x.getObjectViews();
+    assert(['well','market','wagon','apiary','forge','shrine'].every(k=>stats.counts[k]===1),'All six handcrafted destinations exist exactly once');
+    assert(stats.craftedInstances>6500&&stats.microInstances>400,'Thousands of modeled craft parts and micro-details are present');
+    assert(stats.counts.pottery===100&&stats.counts.spokedWheels===4&&stats.counts.beehives===3,'Pottery, wagon wheels and beehives are fully assembled');
+    assert(views.length===12&&new Set(views.map(v=>v.id)).size===12,'Twelve unique overview and detail compositions exist');
+    assert(views.every(v=>v.eye.concat(v.target).every(Number.isFinite)),'Every camera composition contains finite coordinates');
+    views[0].eye[0]=Infinity;assert(Number.isFinite(x.getObjectViews()[0].eye[0]),'Camera diagnostics return defensive copies');
+    x.setSceneryDensity(1);const full=x.getSceneryStats();x.setSceneryDensity(.4);const light=x.getSceneryStats();
+    assert(light.craftedInstances===full.craftedInstances&&light.microInstances===full.microInstances,'Density changes never remove structural craft parts');
+    assert(light.activeInstances<full.activeInstances,'Density still reduces environmental vegetation');
+    x.setSceneryDensity(NaN);assert(x.getSceneryStats().density===.4,'Nonfinite density input is safely ignored');
+    t.teleport(-23,29);t.step(.3);assert(x.getSceneryStats().visibleMicroInstances>0,'Nearby crafted micro-detail becomes visible');
+    t.teleport(1400,1400);t.step(.3);assert(x.getSceneryStats().visibleMicroInstances===0,'Distant micro-detail is actually culled');
+    assert(x.sceneryClearance(-23,29)&&!x.sceneryClearance(1200,1200),'Grass clearance protects craft foundations only');
+    assert(!game.test.setObjectView('missing-view'),'Invalid photo composition is rejected');
+    assert(game.test.setObjectView('market-detail')&&game.getState().paused,'Selecting a real detail view pauses gameplay');
+    assert(d.body.dataset.shot==='market-detail'&&game.getState().position.x===22,'Photo view moves to the actual market location');
+    w.dispatchEvent(new w.Event('pagehide'));assert(localStorage.getItem('verdant-wildfront-v2')===save,'Object review leaves existing save data untouched');
     console.info('ALL '+passed+' WILDFRONT CHECKS PASSED');results.dataset.complete='true';
   }catch(e){console.error('WILDFRONT TEST FAILURE: '+e.message);results.dataset.complete='failed';results.textContent+='\nERROR '+e.message;}
 })();
