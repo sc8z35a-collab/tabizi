@@ -8,6 +8,7 @@ window.createWildfront = function (ctx) {
   const home={x:state.x,z:state.z};
   let elapsed=0, mounted=null, dead=false, hp=100, potions=3, kills=0, bossWins=0, attackCD=0, dodgeCD=0, invincible=0, healCD=0, combatTimer=0, noticeTimer=0, hurtTimer=0, dodgeTime=0;
   let boss=null, nextRaid=105, activeEncounter=null;
+  let airship=null;
   const enemies=[], projectiles=[], effects=[], entities=[], wheels=[], propellers=[];
   // All new mechanics use simulation time and share the existing pause/death gates.
   let stamina=100, regenDelay=0, exhausted=false, combo=0, comboTime=0;
@@ -19,6 +20,7 @@ window.createWildfront = function (ctx) {
   function cue(kind){if(ctx.playCue)ctx.playCue(kind);if($('haptics-toggle').checked&&navigator.vibrate)navigator.vibrate(kind==='perfect'?[15,35,25]:12);}
   function spend(amount){if(stamina<amount){$('stamina-fill').parentElement.classList.add('empty');return false;}stamina-=amount;regenDelay=.65;return true;}
   function prepareMove(dt,input){
+    if(airship?.aboard)return input.running;
     const len=Math.hypot(input.mx,input.mz);moveX=input.mx*Math.cos(state.yaw)+input.mz*Math.sin(state.yaw);moveZ=-input.mx*Math.sin(state.yaw)+input.mz*Math.cos(state.yaw);
     if(stamina>28)exhausted=false;
     const running=input.running&&len>.1&&!exhausted&&stamina>0&&!attackHeld;
@@ -533,7 +535,7 @@ window.createWildfront = function (ctx) {
   const camp=new T.Group();camp.position.set(home.x-14,height(home.x-14,home.z-1),home.z-1);scene.add(camp);const crateMat=M('#807450',.1,.8);for(let i=0;i<4;i++){const c=bevel(camp,crateMat,(i%2)*1.3,Math.floor(i/2)*.65+.32,0,1.1,.61,.81,.06);box(camp,darkMetal,(i%2)*1.3,Math.floor(i/2)*.65+.64,0,.07,.03,.85);}rod(camp,steel,[-2,0,0],[-2,4.2,0],.055);const flag=mesh(new T.PlaneGeometry(1.55,.88,5,4),new T.MeshStandardMaterial({map:textTexture('WILDFRONT','#e5dcc0','#47604f'),side:T.DoubleSide}),camp,-1.24,3.6,0);const flagBase=flag.geometry.attributes.position.array.slice();
 
   function setMounted(v){mounted=v;player.visible=!v;state.jump=0;state.vy=0;state.onGround=true;$('vehicle-dashboard').hidden=!v;document.body.classList.toggle('mounted',!!v);$('interact-label').textContent=v?'降りる':'乗る';$('jump-label').textContent=v&&v.type==='plane'?'上昇':'ジャンプ';$('descend-button').hidden=!v||v.type!=='plane';$('dodge-button').disabled=!!v;$('run-button').querySelector('span').textContent=v?'ブースト':'走る';if(v){state.x=v.g.position.x;state.z=v.g.position.z;state.y=v.g.position.y;state.yaw=v.heading;state.pitch=.15;$('vehicle-name').textContent=v.name;notice(v.type==='plane'?'上で加速 → 上昇を押して離陸。降下で着陸':'上下でアクセル・後退 / 左右でハンドル');}else notice('乗り物から降りました');}
-  function interact(){if(dead||ctx.getPaused())return false;if(mounted){if(Math.abs(mounted.speed)>3){notice('速度を落とし、停車してから降りてください');return false;}if(mounted.type==='plane'&&mounted.lift>1.2){notice('着陸してから降りてください');return false;}const v=mounted;state.x=clamp(v.g.position.x+Math.cos(v.heading)*3,-1430,1430);state.z=clamp(v.g.position.z-Math.sin(v.heading)*3,-1430,1430);state.y=height(state.x,state.z);player.position.set(state.x,state.y,state.z);v.speed=0;setMounted(null);return true;}const near=[car,plane].filter(v=>Math.hypot(v.g.position.x-state.x,v.g.position.z-state.z)<(v.type==='plane'?8:5)).sort((a,b)=>a.g.position.distanceTo(player.position)-b.g.position.distanceTo(player.position))[0];if(!near){notice('車・飛行機に近づいて「乗る」。雷アイコンで呼び出せます');return false;}setMounted(near);return true;}
+  function interact(){if(dead||ctx.getPaused())return false;if(airship&&(airship.aboard||(!mounted&&airship.canBoard())))return airship.interact();if(mounted){if(Math.abs(mounted.speed)>3){notice('速度を落とし、停車してから降りてください');return false;}if(mounted.type==='plane'&&mounted.lift>1.2){notice('着陸してから降りてください');return false;}const v=mounted;state.x=clamp(v.g.position.x+Math.cos(v.heading)*3,-1430,1430);state.z=clamp(v.g.position.z-Math.sin(v.heading)*3,-1430,1430);state.y=height(state.x,state.z);player.position.set(state.x,state.y,state.z);v.speed=0;setMounted(null);return true;}const near=[car,plane].filter(v=>Math.hypot(v.g.position.x-state.x,v.g.position.z-state.z)<(v.type==='plane'?8:5)).sort((a,b)=>a.g.position.distanceTo(player.position)-b.g.position.distanceTo(player.position))[0];if(!near){notice('車・飛行機に近づいて「乗る」。雷アイコンで呼び出せます');return false;}setMounted(near);return true;}
   let ascendHeld=false,descendHeld=false;
   function holdButton(button,change){button.addEventListener('pointerdown',e=>{e.preventDefault();if(ctx.getPaused()||dead)return;change(true);if(e.isTrusted)button.setPointerCapture(e.pointerId);});for(const ev of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(ev,()=>change(false));}
   holdButton($('jump-button'),v=>ascendHeld=v);holdButton($('descend-button'),v=>descendHeld=v);window.addEventListener('blur',()=>{ascendHeld=descendHeld=false;});
@@ -590,7 +592,7 @@ window.createWildfront = function (ctx) {
   }
   function sense(){if(dead||ctx.getPaused()||senseCD>0)return false;senseTime=9;senseCD=12;wave(state.x,state.z,8,0xffe4a5);cue('sense');return true;}
   $('sense-button').addEventListener('click',sense);
-  function beginAttack(){if(dead||ctx.getPaused()||attackHeld)return;attackHeld=true;chargeTime=0;}
+  function beginAttack(){if(dead||ctx.getPaused()||attackHeld||airship?.aboard)return;attackHeld=true;chargeTime=0;}
   function releaseAttack(){if(!attackHeld)return;const charged=chargeTime>=.65;attackHeld=false;chargeTime=0;attack(charged);}
   function cancelAttack(){attackHeld=false;attackPointer=null;chargeTime=0;queuedAttack=0;}
   function dropPickup(e){
@@ -615,7 +617,7 @@ window.createWildfront = function (ctx) {
       for(let i=0;i<18;i++){const dist=Math.min(len,3+i*2.8+(elapsed*4)%2.8),x=state.x+dx/len*dist,z=state.z+dz/len*dist;trailDummy.position.set(x,height(x,z)+.7+Math.sin(elapsed*3-i*.5)*.2,z);trailDummy.rotation.y=elapsed;trailDummy.scale.setScalar(1-i*.035);trailDummy.updateMatrix();trail.setMatrixAt(i,trailDummy.matrix);}trail.instanceMatrix.needsUpdate=true;
     }
   }
-  function hurtPlayer(amount){if(dead||invincible>0||!Number.isFinite(amount)||amount<=0)return false;hp=Math.max(0,hp-amount);combo=0;comboTime=0;cancelAttack();cue('hurt');invincible=.55;hurtTimer=.30;combatTimer=9;burst(state.x,state.y+1,state.z);if(hp<=0){dead=true;if(mounted){mounted.speed=0;setMounted(null);}player.visible=true;ctx.resetInputs?.();player.rotation.z=-Math.PI/2;$('defeat-dialog').showModal();keys.clear();noticeTimer=0;persist();}return true;}
+  function hurtPlayer(amount){if(airship?.aboard||dead||invincible>0||!Number.isFinite(amount)||amount<=0)return false;hp=Math.max(0,hp-amount);combo=0;comboTime=0;cancelAttack();cue('hurt');invincible=.55;hurtTimer=.30;combatTimer=9;burst(state.x,state.y+1,state.z);if(hp<=0){dead=true;if(mounted){mounted.speed=0;setMounted(null);}player.visible=true;ctx.resetInputs?.();player.rotation.z=-Math.PI/2;$('defeat-dialog').showModal();keys.clear();noticeTimer=0;persist();}return true;}
   function hitEnemy(e,damage){if(e.dead)return;e.hp=Math.max(0,e.hp-damage);e.aggro=true;e.hit=.18;cue('hit');if(e.type!=='boss'){const len=Math.hypot(e.x-state.x,e.z-state.z)||1;const p=safeEnemyPoint(e.x+(e.x-state.x)/len*.65,e.z+(e.z-state.z)/len*.65);e.x=p.x;e.z=p.z;}burst(e.x,e.g.position.y+(e.type==='boss'?4:1.4),e.z);combatTimer=7;if(e.hp<=0){e.dead=true;e.deathAge=0;e.label.el.style.display='none';if(e.ring){scene.remove(e.ring);e.ring.geometry.dispose();e.ring.material.dispose();e.ring=null;}kills++;dropPickup(e);if(e.type==='boss'){bossWins++;$('boss-hud').hidden=true;potions=Math.min(3,potions+2);notice('BOSS DEFEATED — 嵐喰らいを討伐。回復薬を獲得',6);activeEncounter=null;}persist();}}
   function attack(charged=false){
     if(dead||ctx.getPaused())return false;
@@ -637,7 +639,7 @@ window.createWildfront = function (ctx) {
     return true;
   }
   function dodge(){
-    if(dead||ctx.getPaused()||mounted||dodgeCD>0||!spend(25))return false;
+    if(dead||ctx.getPaused()||mounted||airship?.aboard||dodgeCD>0||!spend(25))return false;
     cancelAttack();dodgeCD=.85;invincible=.46;dodgeTime=.26;
     const len=Math.hypot(moveX,moveZ);dodgeX=len>.1?moveX/len:Math.sin(state.yaw);dodgeZ=len>.1?moveZ/len:Math.cos(state.yaw);
     const perfect=enemies.some(e=>!e.dead&&e.windup>0&&e.windup<.3&&Math.hypot(state.x-(e.type==='boss'?e.strikeX:e.x),state.z-(e.type==='boss'?e.strikeZ:e.z))<(e.type==='boss'?(e.phase===2?13:10):3.3));
@@ -702,7 +704,7 @@ window.createWildfront = function (ctx) {
   function eventsUI(){if(dead)return;openDialog('events-dialog');}
   $('events-button').addEventListener('click',eventsUI);$('event-shortcut').addEventListener('click',eventsUI);$('auto-weather').addEventListener('change',e=>weather.auto=e.target.checked);
   document.querySelectorAll('[data-weather]').forEach(b=>b.addEventListener('click',()=>{setWeather(b.dataset.weather);$('events-dialog').close();}));
-  document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>{const event=b.dataset.event;if(event==='car')placeVehicle(car);else if(event==='plane')placeVehicle(plane);else if(event==='boss')startBoss();else spawnGroup(event==='goblins'?'goblin':'creatures',true);$('events-dialog').close();}));
+  document.querySelectorAll('[data-event]').forEach(b=>b.addEventListener('click',()=>{const event=b.dataset.event;if(event==='airship'){if(airship?.place())notice('飛行船を近くに配置しました。左舷の搭乗口から乗れます');}else if(event==='car')placeVehicle(car);else if(event==='plane')placeVehicle(plane);else if(event==='boss')startBoss();else spawnGroup(event==='goblins'?'goblin':'creatures',true);$('events-dialog').close();}));
   window.addEventListener('keydown',e=>{if(e.repeat||ctx.getPaused()||dead)return;if(e.code==='KeyE'){e.preventDefault();interact();}if(e.code==='KeyJ'){e.preventDefault();beginAttack();}if(e.code==='KeyC'){e.preventDefault();sense();}if(e.code==='KeyF'){e.preventDefault();dodge();}if(e.code==='KeyR'){e.preventDefault();heal();}});
   window.addEventListener('keyup',e=>{if(e.code==='KeyJ')releaseAttack();});
   const projected=new T.Vector3();let hudClock=0;
@@ -722,9 +724,10 @@ window.createWildfront = function (ctx) {
     $('sense-button').classList.toggle('active',senseTime>0);$('sense-button').disabled=senseCD>0;
     $('attack-button').disabled=!mounted&&stamina<8;$('dodge-button').disabled=!!mounted||stamina<25;
     const boardable=mounted||entities.filter(v=>Math.hypot(v.g.position.x-state.x,v.g.position.z-state.z)<(v.type==='plane'?8:5)).sort((a,b)=>a.g.position.distanceTo(player.position)-b.g.position.distanceTo(player.position))[0];
-    $('interact-button').hidden=!boardable;
+    $('interact-button').hidden=!boardable&&!airship?.canBoard();
     $('interact-button').querySelector('use').setAttribute('href',boardable?.type==='plane'?'#i-plane':'#i-car');
     $('interact-button').setAttribute('aria-label',mounted?'降りる E':'乗る E');
+    if(airship?.canBoard()&&!mounted){$('interact-label').textContent='飛行船に乗る';$('interact-button').querySelector('use').setAttribute('href','#i-plane');}else if(!mounted)$('interact-label').textContent='乗る';
     document.querySelectorAll('#potion-pips b').forEach((p,i)=>p.classList.toggle('filled',i<potions));
     document.querySelectorAll('#combo-pips b').forEach((p,i)=>p.classList.toggle('filled',i<combo));
     document.querySelectorAll('#memory-runes i').forEach((p,i)=>p.classList.toggle('filled',discovered.has(sanctuaries[i].id)));
@@ -736,20 +739,22 @@ window.createWildfront = function (ctx) {
   let stoneEventFired=false;
   function update(dt,paused){const sim=paused||dead?0:dt;elapsed+=sim;attackCD=Math.max(0,attackCD-sim);dodgeCD=Math.max(0,dodgeCD-sim);healCD=Math.max(0,healCD-sim);invincible=Math.max(0,invincible-sim);combatTimer=Math.max(0,combatTimer-sim);hurtTimer=Math.max(0,hurtTimer-dt);$('damage-overlay').style.opacity=hurtTimer>0?.8:0;
     noticeTimer=Math.max(0,noticeTimer-dt);if(noticeTimer<=0)$('action-notice').classList.remove('visible');
-    if(dodgeTime>0&&sim>0){dodgeTime-=sim;const nx=clamp(state.x+dodgeX*27*sim,-1430,1430),nz=clamp(state.z+dodgeZ*27*sim,-1430,1430);if(lakeDistance(nx,nz)>100){state.x=nx;state.z=nz;state.y=height(nx,nz);player.position.set(nx,state.y+state.jump,nz);}player.rotation.z=Math.sin((.26-dodgeTime)/.26*Math.PI)*.5;}else if(!dead)player.rotation.z=0;
+    if(dodgeTime>0&&sim>0&&!airship?.aboard){dodgeTime-=sim;const nx=clamp(state.x+dodgeX*27*sim,-1430,1430),nz=clamp(state.z+dodgeZ*27*sim,-1430,1430);if(lakeDistance(nx,nz)>100){state.x=nx;state.z=nz;state.y=height(nx,nz);player.position.set(nx,state.y+state.jump,nz);}player.rotation.z=Math.sin((.26-dodgeTime)/.26*Math.PI)*.5;}else if(!dead)player.rotation.z=0;
     sword.rotation.x=attackCD>.1?-1.4+Math.sin(attackCD*14)*.8:0;sword.rotation.z=attackCD>.1?-.9:-.27;
-    if(sim>0){sensoryStep(sim);enemyStep(sim*(focusTime>0?.25:1));projectileStep(sim);weatherStep(sim);if(elapsed>nextRaid){nextRaid=elapsed+170;if(!mounted||mounted.lift<5)spawnGroup('creatures',true);}if(!stoneEventFired&&Math.hypot(state.x+258,state.z+346)<42&&(!mounted||mounted.lift<5)){stoneEventFired=true;startBoss();}}
+    if(sim>0){sensoryStep(sim);enemyStep(sim*(focusTime>0?.25:1));projectileStep(sim);weatherStep(sim);if(elapsed>nextRaid){nextRaid=elapsed+170;if(!airship?.aboard&&(!mounted||mounted.lift<5))spawnGroup('creatures',true);}if(!airship?.aboard&&!stoneEventFired&&Math.hypot(state.x+258,state.z+346)<42&&(!mounted||mounted.lift<5)){stoneEventFired=true;startBoss();}}
     for(const prop of propellers)prop.rotation.z+=sim*(mounted===plane?Math.max(12,plane.speed*1.7):.8);
     const p=flag.geometry.attributes.position;for(let i=0;i<p.count;i++)p.setZ(i,flagBase[i*3+2]+Math.sin(elapsed*3+flagBase[i*3]*4)*.10*(flagBase[i*3]+.78));p.needsUpdate=true;
     scenery.update(sim);
     hud(dt);
+    airship?.update(dt,paused||dead);
   }
   function drawMap(c,mx,mz,large,drawLabel){
+    airship?.drawMap(c,mx,mz);
     c.save();
     for(const site of scenery.sites){const x=mx(site.x),z=mz(site.z);c.fillStyle=site.type==='ruins'?'#b3c8c1':'#d8be8c';c.fillRect(x-2,z-2,4,4);if(large&&drawLabel)drawLabel(site.name,x,z);}
     c.restore();
     for(const v of entities){c.fillStyle=v.type==='car'?'#e8d8a6':'#b6dbe4';c.font=large?'20px serif':'12px serif';c.textAlign='center';c.fillText(v.type==='car'?'▣':'✦',mx(v.g.position.x),mz(v.g.position.z));}for(const e of enemies){if(e.dead)continue;c.beginPath();c.fillStyle=e.type==='boss'?'#ffbd76':e.type==='creatures'?'#e79576':'#bbcd74';c.arc(mx(e.x),mz(e.z),e.type==='boss'?5:large?3:2,0,Math.PI*2);c.fill();}}
-  const api={setPerformanceMode,setSceneryDensity:scenery.setDensity,getSceneryStats:scenery.stats,getObjectViews:()=>scenery.views.map(v=>({...v,eye:[...v.eye],target:[...v.target]})),sceneryClearance:scenery.clearance,get mounted(){return mounted;},get dead(){return dead;},get windSpeed(){return weather.type==='storm'?1.85:1;},pauseInputs(){ascendHeld=descendHeld=false;cancelAttack();moveX=moveZ=0;},prepareMove,sense,drive,update,interact,attack,dodge,heal,drawMap,respawn,setWeather,startBoss,spawnGroup,placeVehicle,getState:()=>({stamina,combo,chargeTime,focusTime,empowered,perfectDodges,senseTime,senseCD,pickups:pickups.length,collected,dodgeCD,attackCD,hp,potions,kills,bossWins,dead,mode:mounted?mounted.type:'foot',vehicleSpeed:mounted?mounted.speed:0,altitude:mounted?mounted.lift:0,weather:weather.type,weatherIntensity:weather.intensity,projectiles:projectiles.length,enemies:enemies.filter(e=>!e.dead).map(e=>({type:e.type,hp:e.hp,x:e.x,z:e.z,aggro:e.aggro,windup:e.windup})),boss:boss?{hp:boss.hp,phase:boss.phase,dead:boss.dead}:null,car:{x:car.g.position.x,z:car.g.position.z},plane:{x:plane.g.position.x,z:plane.g.position.z}})};
+  const api={setPerformanceMode,setSceneryDensity:scenery.setDensity,getSceneryStats:scenery.stats,getObjectViews:()=>scenery.views.map(v=>({...v,eye:[...v.eye],target:[...v.target]})),sceneryClearance:scenery.clearance,get airship(){return airship;},get mounted(){return mounted;},get dead(){return dead;},get windSpeed(){return weather.type==='storm'?1.85:1;},pauseInputs(){ascendHeld=descendHeld=false;cancelAttack();moveX=moveZ=0;airship?.pauseInputs();},prepareMove,sense,drive,update,interact,attack,dodge,heal,drawMap,respawn,setWeather,startBoss,spawnGroup,placeVehicle,getState:()=>({stamina,combo,chargeTime,focusTime,empowered,perfectDodges,senseTime,senseCD,pickups:pickups.length,collected,dodgeCD,attackCD,hp,potions,kills,bossWins,dead,mode:mounted?mounted.type:'foot',vehicleSpeed:mounted?mounted.speed:0,altitude:mounted?mounted.lift:0,weather:weather.type,weatherIntensity:weather.intensity,projectiles:projectiles.length,enemies:enemies.filter(e=>!e.dead).map(e=>({type:e.type,hp:e.hp,x:e.x,z:e.z,aggro:e.aggro,windup:e.windup})),boss:boss?{hp:boss.hp,phase:boss.phase,dead:boss.dead}:null,car:{x:car.g.position.x,z:car.g.position.z},plane:{x:plane.g.position.x,z:plane.g.position.z}})};
   // Test-only deterministic hooks exercise the same production simulation functions.
   if(testing)api.test={beginAttack,releaseAttack,cancelAttack,setStamina(v){stamina=clamp(v,0,100);},setWindup(seconds){const e=targetEnemy();if(e){e.windup=seconds;e.strikeX=state.x;e.strikeZ=state.z;}},teleport(x,z){state.x=x;state.z=z;state.y=height(x,z);player.position.set(x,state.y,z);},step(seconds){for(let t=0;t<seconds;t+=.025)update(.025,false);},drive(seconds,input){for(let t=0;t<seconds;t+=.025)drive(.025,input);},holdAscend(v){ascendHeld=v;},holdDescend(v){descendHeld=v;},hurt(amount){invincible=0;return hurtPlayer(amount);},receiveDamage(amount){return hurtPlayer(amount);},hitNearest(amount){const e=enemies.filter(e=>!e.dead).sort((a,b)=>Math.hypot(a.x-state.x,a.z-state.z)-Math.hypot(b.x-state.x,b.z-state.z))[0];if(e)hitEnemy(e,amount);},reset(){respawn();},clearEnemies(){enemies.forEach(e=>{e.dead=true;e.deathAge=11;});enemyStep(.025);boss=null;$('boss-hud').hidden=true;}};
   if(testing)api.test.prepareBoss=function(){
@@ -759,5 +764,6 @@ window.createWildfront = function (ctx) {
     camera.position.set(state.x,state.y+3.5,state.z+10.5);camera.lookAt(state.x,state.y+1.7,state.z);hud(.2);document.body.dataset.review='boss';
   };
   console.info('Wildfront ready: drivable car, flyable plane, goblins, Creatures squad, boss and 4 weather states.');
+  airship=window.createAirship({...ctx,notice,getDead:()=>dead,getMounted:()=>mounted,onBoard(){dodgeTime=0;cancelAttack();}});
   return api;
 };
