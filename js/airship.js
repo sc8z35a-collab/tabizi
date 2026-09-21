@@ -20,7 +20,12 @@ window.createAirship = function (ctx) {
   let mode = 'ground', heading = -.28, yawRate = 0, throttle = 0, climb = 0;
   let accumulator = 0, verticalSpeed = 0, footVelocity = 0, contact = false, footGrounded = true;
   let clearance = 0, impact = 0, totalContacts = 0, exterior = true, cutaway = false;
-  let autopilot = false, takeoffY = 0, ascentHeld = false, descentHeld = false;
+  let autopilot = false, ascentHeld = false, descentHeld = false;
+  const navigation={heading:0,altitude:120,throttle:.55,avoiding:false,limited:false};
+  let roll=0,pitch=0,rollSpeed=0,pitchSpeed=0,hullWet=0,condensation=0;
+  const rainInverse=new T.Matrix4(),rainPoint=new T.Vector3(),viewRotation=new T.Quaternion();
+  const viewEuler=new T.Euler(0,0,0,'YXZ');
+  ship.rotation.order='YXZ';
   let input = {mx:0, mz:0, running:false}, hudTick = 0, clock = 0;
   let entry = null, hatch = null, repairHeld=false, hazardClock=0, explosions=0;
   const previousGroundPosition=new T.Vector3(state.x,state.y,state.z);
@@ -40,6 +45,30 @@ window.createAirship = function (ctx) {
   const carpet = mat('carpet', '#31595e', 0, 1);
   const bedding = mat('bedding', '#eeeadb', 0, 1);
   const glass = mat('glass', '#9acbd5', .15, .15, {transparent:true, opacity:.16, depthWrite:false, side:T.DoubleSide});
+  // Rain film is drawn on the actual window surfaces, never over the controls.
+  const windowWeather={time:{value:0},wet:{value:0},fog:{value:0},extreme:{value:0}};
+  glass.onBeforeCompile=shader=>{
+    shader.uniforms.uRainTime=windowWeather.time;shader.uniforms.uRainWet=windowWeather.wet;
+    shader.uniforms.uRainFog=windowWeather.fog;shader.uniforms.uRainExtreme=windowWeather.extreme;
+    shader.vertexShader='varying vec2 vRainUV;\n'+shader.vertexShader;
+    shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvRainUV=uv;');
+    shader.fragmentShader=`varying vec2 vRainUV;
+      uniform float uRainTime,uRainWet,uRainFog,uRainExtreme;
+      float rainHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+      `+shader.fragmentShader;
+    shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      vec2 grid=vRainUV*vec2(63.0,12.0);
+      float seed=rainHash(floor(grid));
+      vec2 drop=fract(grid+vec2(0.12*sin(uRainTime*.7),uRainTime*(.13+seed*.22)))-.5;
+      float beads=(1.0-smoothstep(.10,.28,length(drop*vec2(2.7,.7))))*step(.35,seed);
+      float stream=pow(.5+.5*sin(vRainUV.x*410.0+sin(vRainUV.y*12.0+uRainTime)*1.8),18.0);
+      float mist=uRainFog*(.79+.16*sin(vRainUV.x*17.0)*sin(vRainUV.y*11.0));
+      float film=uRainWet*(beads*.72+stream*.22);
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.65,.73,.75),clamp(mist+film,0.0,.96));
+      diffuseColor.a=clamp(.13+mist*.79+film+uRainExtreme*.12,.13,.98);
+    `);
+  };
+  glass.customProgramCacheKey=()=> 'airship-rain-film-v1';
   const warm = mat('lamps', '#ffe9b5', 0, .3, {emissive:'#ffce77', emissiveIntensity:1.5});
   const green = mat('green', '#488575', 0, .8);
   const boxGeo = new T.BoxGeometry(1,1,1);
@@ -89,7 +118,7 @@ window.createAirship = function (ctx) {
     c.fillStyle={wood:'#bd946c',fabric:'#c9c7bd',leather:'#b4856f',carpet:'#b0c4ba'}[kind];c.fillRect(0,0,n,n);
     let seed=71;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
     if(kind==='wood'){
-      for(let x=0;x<n;x+=2){c.strokeStyle=`rgba(55,28,12,${.06+random()*.22})`;c.lineWidth=.6+random()*1.5;c.beginPath();c.moveTo(x,0);c.bezierCurveTo(x+Math.sin(x*.08)*22,n*.33,x-12,n*.7,x,n);c.stroke();}
+      for(let x=0;x<n;x+=8)for(let y=0;y<n;y+=32){c.fillStyle=`rgba(55,28,12,${.04+random()*.24})`;c.fillRect(x,y,4+Math.floor(random()*2)*4,24+Math.floor(random()*5)*16);}
       for(let x=0;x<n;x+=n/8){c.fillStyle='#48302566';c.fillRect(x,0,2,n);for(let y=(x%3)*170;y<n;y+=n/2){c.fillRect(x,y,n/8,2);}}
     }else if(kind==='leather'){
       for(let i=0;i<100000;i++){const x=random()*n,y=random()*n;c.fillStyle=i%2?'#422a2138':'#ecd4b930';c.fillRect(x,y,1+random()*3,1+random()*2);}
@@ -309,6 +338,82 @@ window.createAirship = function (ctx) {
     rod(cabin,brass,[side*2.3-.34,.71,z-.35],[side*2.3+.34,.71,z-.35],.012);
     for(let i=0;i<7;i++)box(cabin,brass,side*2.3-.3+i*.1,1.39,z+.265,.018,.014,.014);
   }
+  // Voxel joinery: shared cube geometry, per-instance colour, no per-cube draw calls.
+  const voxelRoot=new T.Group();voxelRoot.name='Handcrafted voxel interior';cabin.add(voxelRoot);
+  const voxelSets=new Map();let voxelCount=0;
+  let voxelSeed=9041;const vrand=()=>{voxelSeed=(Math.imul(voxelSeed,1664525)+1013904223)>>>0;return voxelSeed/4294967296;};
+  const voxelWood=mat('voxel oak','#ffffff',.03,.46),voxelFabric=mat('voxel textile','#ffffff',0,.88);
+  const voxelMetal=mat('voxel fittings','#ffffff',.72,.27),voxelTile=mat('voxel ceramic','#ffffff',.12,.29);
+  function voxel(material,color,x,y,z,w,h,d){
+    if(!voxelSets.has(material))voxelSets.set(material,[]);
+    voxelSets.get(material).push({x,y,z,w,h,d,color:new T.Color(color).multiplyScalar(.86+vrand()*.25)});voxelCount++;
+  }
+  // Individual staggered oak boards with end-grain blocks and countersunk nails.
+  for(const deck of [0,upperDeckY])for(let row=0;row<22;row++)for(let j=0;j<48;j++){
+    const x=-3.18+row*.3,z=-14.7+j*.62;
+    if(deck&&Math.abs(x)<.91&&z>6.1&&z<13.65)continue;
+    if(Math.abs(x)<.76&&z<14&&(!deck||z<6))continue;
+    const base=['#a77748','#bc905e','#91613d','#c39a69'][(row+Math.floor(j/3))%4];
+    voxel(voxelWood,base,x,deck+.012,z,.29,.022,.605);
+    for(const dz of [-.27,.27])voxel(voxelMetal,'#544639',x+.105,deck+.027,z+dz,.017,.007,.017);
+    for(let g=0;g<3;g++)voxel(voxelWood,'#785033',x-.09+g*.08,deck+.026,z+(vrand()-.5)*.3,.009,.004,.1+vrand()*.16);
+  }
+  // Lower wall wainscot, recessed panels, stepped cornices and window latch blocks.
+  for(const deck of [0,upperDeckY])for(const side of [-1,1])for(let j=0;j<98;j++){
+    const z=-14.65+j*.3;if(!deck&&side<0&&z>-2.95&&z< -1.05)continue;
+    voxel(voxelWood,'#b69060',side*3.295,deck+.43,z,.045,.68,.282);
+    voxel(voxelWood,'#704e34',side*3.265,deck+.43,z,.027,.49,.213);
+    for(const y of [.12,.77,.84])voxel(voxelMetal,'#c19d60',side*3.24,deck+y,z,.035,.022,.30);
+    if(j%8===0){voxel(voxelMetal,'#a7b7af',side*3.23,deck+1.20,z,.08,.11,.06);voxel(voxelMetal,'#bb9556',side*3.17,deck+1.23,z,.10,.025,.18);}
+  }
+  for(const deck of [0,upperDeckY])for(let z=-14.5;z<15;z+=.42)for(const side of [-1,1]){
+    voxel(voxelWood,'#765335',side*3.15,deck+2.97,z,.32,.11,.39);
+    voxel(voxelWood,'#c3a073',side*3.05,deck+3.015,z,.42,.045,.34);
+  }
+  // Replace rounded cushions with stepped, individually shaded upholstery voxels.
+  for(const group of [cabin,upper])for(const m of [...group.children])if(m.isMesh&&m.geometry===sphereGeo&&(m.material===leather||m.material===bedding)){
+    const {x:sx,y:sy,z:sz}=m.scale,step=.105;
+    for(let x=-sx;x<=sx;x+=step)for(let y=-sy;y<=sy;y+=step)for(let z=-sz;z<=sz;z+=step){
+      const d=(x/sx)**2+(y/sy)**2+(z/sz)**2;
+      if(d<=1&&d>.48)voxel(voxelFabric,m.material===leather?'#9a5135':'#e3d5b2',m.position.x+x,m.position.y+y,m.position.z+z,step*.97,step*.97,step*.97);
+    }group.remove(m);
+  }
+  for(const z of [-12.7,-8.3,-5.8,-3.3])for(const side of [-1,1]){
+    const x=side*(z===-12.7?1.6:2.3);
+    for(let i=0;i<7;i++)for(let j=0;j<7;j++){
+      voxel(voxelFabric,(i+j)%3?'#a25a3c':'#87432d',x-.30+i*.10,.691,z-.31+j*.10,.095,.025,.095);
+      voxel(voxelFabric,'#ac6444',x-.30+i*.10,.75+j*.095,z+.265,.095,.09,.025);
+      if(j===0||j===6)voxel(voxelFabric,'#e5c48f',x-.30+i*.1,.712,z-.31+j*.1,.024,.009,.018);
+    }
+  }
+  // Galley mosaic, cupboard handles, shelf provisions and voxel ceramic cups.
+  for(let i=0;i<10;i++)for(let j=0;j<27;j++)voxel(voxelTile,(i+j)%2?'#d5d5bf':'#397270',3.305,1.13+i*.09,.25+j*.18,.028,.084,.17);
+  for(let z=.4;z<4.7;z+=.46){voxel(voxelWood,'#755033',2.257,.55,z,.025,.79,.43);voxel(voxelMetal,'#c6a566',2.23,.79,z,.045,.04,.20);}
+  for(let i=0;i<5;i++)for(let layer=0;layer<3;layer++)for(let n=0;n<8;n++){
+    const a=n*Math.PI/4;voxel(voxelTile,'#e9dfc1',2.8+Math.cos(a)*.065,1.16+layer*.06,.6+i*.23+Math.sin(a)*.065,.055,.06,.055);
+  }
+  // Mechanical dial bezels and illuminated switch banks around the live instruments.
+  for(let i=0;i<8;i++){
+    const x=-2.3+i*.65;
+    for(let n=0;n<16;n++){const a=n*Math.PI/8;voxel(voxelMetal,'#bc9b62',x+Math.cos(a)*.18,1.1+Math.sin(a)*.18,-13.616,.047,.047,.035);}
+    voxel(voxelMetal,'#e8d9ac',x,1.12,-13.59,.014,.20,.012);
+    for(let n=0;n<3;n++){voxel(voxelMetal,'#bac4bd',x-.15+n*.14,.82,-13.61,.07,.055,.04);voxel(voxelTile,n===1?'#77b89a':'#c87948',x-.15+n*.14,.74,-13.59,.034,.028,.025);}
+  }
+  // Voxel lampshades and tiered plants in the panorama lounge.
+  for(const side of [-1,1])for(const z of [-10,5.5]){
+    const x=side*2.8;
+    for(let layer=0;layer<4;layer++)voxel(voxelTile,'#bb8353',x,3.36+layer*.11,z,.30+layer*.035,.105,.30+layer*.035);
+    for(let k=0;k<30;k++)voxel(voxelFabric,k%3?'#527957':'#87a064',x+(vrand()-.5)*.65,3.8+vrand()*.60,z+(vrand()-.5)*.65,.12,.12,.12);
+  }
+  for(const side of [-1,1])for(let z=-12;z<14;z+=3){
+    for(let tier=0;tier<3;tier++)for(let i=0;i<5;i++)voxel(voxelMetal,'#c4a568',side*3.12,5.70+tier*.1,z-.17+i*.085,.12-tier*.025,.06,.048);
+  }
+  const voxelDummy=new T.Object3D();
+  for(const [material,items] of voxelSets){
+    const inst=new T.InstancedMesh(boxGeo,material,items.length);
+    items.forEach((v,i)=>{voxelDummy.position.set(v.x,v.y,v.z);voxelDummy.scale.set(v.w,v.h,v.d);voxelDummy.updateMatrix();inst.setMatrixAt(i,voxelDummy.matrix);inst.setColorAt(i,v.color);});
+    inst.castShadow=true;inst.receiveShadow=true;inst.computeBoundingSphere();voxelRoot.add(inst);
+  }voxelSets.clear();
   // Port boarding hatch is an explicit interaction: no unsafe midair exit.
   entry=new T.Vector3(-3.4,0,-2);
   hatch=door(-3.4,-2,true,'搭乗ハッチ',false);
@@ -368,9 +473,9 @@ window.createAirship = function (ctx) {
     ship.updateWorldMatrix(true,false);return new T.Vector3(r.x,31+envelopeLift,r.z).applyMatrix4(ship.matrixWorld);
   }
   function damageStep(dt){
-    const w=ctx.getWeather(),raining=w.type==='rain'||w.type==='storm';hazardClock+=dt;
+    const w=ctx.getWeather(),raining=['rain','storm','deluge'].includes(w.type);hazardClock+=dt;
     for(const r of rooms){
-      r.wet=clamp(r.wet+dt*(raining?w.intensity*(.85+(100-r.hp)*.025):-1.5),0,100);
+      r.wet=clamp(r.wet+dt*(raining?w.intensity*(w.type==='deluge'?3.4:.85)*(1+(100-r.hp)*.025):-1.5),0,100);
       r.cooldown=Math.max(0,r.cooldown-dt);r.blast=Math.max(0,r.blast-dt*1.7);
       if(r.wet>50&&r.cooldown===0){r.cooldown=18;damageRoom(r,18+r.wet*.13,'雨漏りによる電気短絡');}
       if(r.fire>0){r.hp=Math.max(0,r.hp-dt*.6);r.fire=Math.max(0,r.fire-dt*.005);}
@@ -422,8 +527,8 @@ window.createAirship = function (ctx) {
   }
   function walkStep(dt, controls) {
     const yaw=state.yaw-heading, speed=controls.running?2.8:1.8;
-    const dx=(controls.mx*Math.cos(yaw)+controls.mz*Math.sin(yaw))*speed*dt;
-    const dz=(-controls.mx*Math.sin(yaw)+controls.mz*Math.cos(yaw))*speed*dt;
+    const dx=((controls.mx*Math.cos(yaw)+controls.mz*Math.sin(yaw))*speed+Math.sin(roll)*(hullWet>.6?2.2:.8))*dt;
+    const dz=((-controls.mx*Math.sin(yaw)+controls.mz*Math.cos(yaw))*speed-Math.sin(pitch)*(hullWet>.6?2.2:.8))*dt;
     const all=activeObstacles();
     // Axis-separated sweeps, with <= 4 cm substeps, avoid thin wall tunnelling.
     const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.04));
@@ -466,26 +571,59 @@ window.createAirship = function (ctx) {
   }
   function physicsStep(dt,controls) {
     clock+=dt;impact=Math.max(0,impact-dt*2);
+    const weather=ctx.getWeather(),extreme=weather.type==='deluge';
+    const wetTarget=['rain','storm','deluge'].includes(weather.type)?weather.intensity:0;
+    hullWet+=(wetTarget-hullWet)*(1-Math.exp(-dt*(wetTarget?hullWet<.1?1:.1:.025)));
+    condensation+=((wetTarget*(extreme?1:weather.type==='storm'?.82:.56))-condensation)*(1-Math.exp(-dt*(wetTarget?.2:.035)));
     if(mode==='pilot'){
-      throttle=clamp(throttle-(keys.has('KeyW')||keys.has('ArrowUp')?-.35:keys.has('KeyS')||keys.has('ArrowDown')?.35:0)*dt,-.25,1);
-      yawRate+=( -controls.mx*.19-yawRate)*(1-Math.exp(-dt*1.5));
-      climb=(ascentHeld||keys.has('Space')?1:0)-(descentHeld||keys.has('KeyQ')?1:0);
-      if(climb)autopilot=false;
-    }else {yawRate*=Math.exp(-dt*1.5);climb=0;}
-    if(autopilot){climb=ship.position.y<takeoffY?1:0;if(!climb)autopilot=false;}
-    const turn=yawRate*dt;heading+=turn;if(mode!=='ground')state.yaw+=turn;
-    ship.rotation.y=heading;
+      const manual=Math.abs(controls.mx)>.08||keys.has('KeyW')||keys.has('KeyS')||keys.has('ArrowUp')||keys.has('ArrowDown')||ascentHeld||descentHeld||keys.has('Space')||keys.has('KeyQ');
+      if(manual)autopilot=false;
+      if(!autopilot){
+        throttle=clamp(throttle-(keys.has('KeyW')||keys.has('ArrowUp')?-.35:keys.has('KeyS')||keys.has('ArrowDown')?.35:0)*dt,-.25,1);
+        yawRate+=(-controls.mx*.19-yawRate)*(1-Math.exp(-dt*1.5));
+        climb=(ascentHeld||keys.has('Space')?1:0)-(descentHeld||keys.has('KeyQ')?1:0);
+      }
+    }else if(!autopilot){yawRate*=Math.exp(-dt*1.5);climb=0;}
+    if(autopilot){
+      const margin=boundary-Math.max(Math.abs(ship.position.x),Math.abs(ship.position.z));
+      if(margin<950)navigation.avoiding=true;
+      if(margin>1700&&navigation.avoiding){navigation.avoiding=false;navigation.heading=heading;}
+      let desired=navigation.avoiding?Math.atan2(ship.position.x,ship.position.z):navigation.heading;
+      const crosswind=weather.windX*Math.cos(desired)-weather.windZ*Math.sin(desired);
+      desired+=clamp(crosswind/Math.max(15,velocity.length()),-.32,.32);
+      const error=Math.atan2(Math.sin(desired-heading),Math.cos(desired-heading));
+      yawRate+=(clamp(error*.6,-.16,.16)-yawRate)*(1-Math.exp(-dt*1.3));
+      let groundAhead=height(ship.position.x,ship.position.z);
+      for(const distance of [120,300,550])groundAhead=Math.max(groundAhead,height(ship.position.x-Math.sin(heading)*distance,ship.position.z-Math.cos(heading)*distance));
+      const targetY=groundAhead+navigation.altitude;
+      climb=clamp((targetY-ship.position.y)*.10-verticalSpeed*.32,-1,1);
+      throttle+=(navigation.throttle-throttle)*(1-Math.exp(-dt*.5));
+      navigation.limited=extreme||rooms[5].hp<45||Math.abs(error)>.6;
+    }else navigation.limited=false;
+    // Wind loads drive both translation and damped pitch/roll, including while unattended.
+    const airborne=contact?.12:1,windSpeed=Math.hypot(weather.windX,weather.windZ);
+    const sway=(extreme?.48:weather.type==='storm'?.13:.025)*Math.max(.15,weather.intensity)*airborne;
+    const targetRoll=sway*(Math.sin(clock*1.1)+.42*Math.sin(clock*2.63))-.35*yawRate;
+    const targetPitch=sway*.62*(Math.sin(clock*.83+1.8)+.3*Math.sin(clock*2.13));
+    rollSpeed+=((targetRoll-roll)*2.2-rollSpeed*1.7)*dt;pitchSpeed+=((targetPitch-pitch)*2.0-pitchSpeed*1.6)*dt;
+    roll=clamp(roll+rollSpeed*dt,-.67,.67);pitch=clamp(pitch+pitchSpeed*dt,-.42,.42);
+    const windYaw=airborne*windSpeed*(extreme?.0035:.0007)*Math.sin(clock*.61);
+    const turn=(yawRate+windYaw)*dt;heading+=turn;if(mode!=='ground')state.yaw+=turn;
+    ship.rotation.set(pitch,heading,roll);
     forward.set(-Math.sin(heading),0,-Math.cos(heading));
     const requested=boostHeld||keys.has('ShiftLeft')||keys.has('ShiftRight');
     if(boostLocked&&boostCharge>=.35)boostLocked=false;
-    boosting=mode==='pilot'&&requested&&!boostLocked&&boostCharge>0&&throttle>0&&rooms[5].hp>40;
+    boosting=mode==='pilot'&&!autopilot&&requested&&!boostLocked&&boostCharge>0&&throttle>0&&rooms[5].hp>40;
     boostCharge=clamp(boostCharge+dt*(boosting?-1/8:1/16),0,1);
     if(boostCharge===0)boostLocked=true;
     const maxSpeed=cruiseSpeed*(boosting?boostMultiplier:1)*(.2+.8*rooms[5].hp/100);
-    velocity.lerp(temp.copy(forward).multiplyScalar(throttle*maxSpeed),1-Math.exp(-dt*(boosting?.65:.24)));
+    const thrustLimit=extreme?.38:1;
+    velocity.lerp(temp.copy(forward).multiplyScalar(throttle*maxSpeed*thrustLimit),1-Math.exp(-dt*(boosting?.65:.24)));
+    velocity.x+=weather.windX*dt*(extreme?.9:.18)*airborne;velocity.z+=weather.windZ*dt*(extreme?.9:.18)*airborne;
     // Boost release decays naturally back to cruise rather than braking instantly.
     const integrity=rooms.reduce((n,r)=>n+r.hp,0)/(rooms.length*100);
     verticalSpeed+=(climb*5*(.35+.65*integrity)-(integrity<.5?( .5-integrity)*3:0)-verticalSpeed)*(1-Math.exp(-dt*.65));
+    verticalSpeed+=Math.sin(clock*1.27)*windSpeed*dt*(extreme?.27:.04)*airborne;
     if(ship.position.y>height(ship.position.x,ship.position.z)+520)verticalSpeed=Math.min(0,verticalSpeed);
     ship.position.addScaledVector(velocity,dt);ship.position.y+=verticalSpeed*dt;
     if(Math.abs(ship.position.x)>boundary||Math.abs(ship.position.z)>boundary){ship.position.x=clamp(ship.position.x,-boundary,boundary);ship.position.z=clamp(ship.position.z,-boundary,boundary);velocity.multiplyScalar(.5);throttle=0;}
@@ -519,7 +657,7 @@ window.createAirship = function (ctx) {
       if(!best||score<best.score)best={x,z,h,score};
     }
     const selected=best||{x:clamp(state.x+45,-boundary,boundary),z:clamp(state.z-35,-boundary,boundary),h:heading};
-    heading=selected.h;ship.position.set(selected.x,100,selected.z);ship.rotation.y=heading;ship.updateWorldMatrix(true,false);
+    heading=selected.h;roll=pitch=rollSpeed=pitchSpeed=0;ship.position.set(selected.x,100,selected.z);ship.rotation.set(0,heading,0);ship.updateWorldMatrix(true,false);
     let y=-Infinity;for(const p of groundSamples){world.copy(p).applyMatrix4(ship.matrixWorld);y=Math.max(y,height(world.x,world.z)-(world.y-ship.position.y));}
     ship.position.y=y+.01;velocity.set(0,0,0);verticalSpeed=0;throttle=0;yawRate=0;autopilot=false;contactStep(0);return true;
   }
@@ -541,7 +679,7 @@ window.createAirship = function (ctx) {
     if(mode==='ground')return canBoard()?board():false;
     if(mode==='pilot'){
       mode='walk';local.set(0,0,-11.65);footVelocity=0;footGrounded=true;exterior=false;cutaway=false;state.yaw=heading+Math.PI;state.pitch=0;climb=0;
-      ctx.resetInputs();pauseInputs();syncUI();ctx.notice('操縦席を離れました。推力は維持され、飛行船は動き続けます',5);return true;
+      ctx.resetInputs();pauseInputs();syncUI();ctx.notice(autopilot?'自動操縦を継続。船内を歩いて点検・修理できます':'操縦席を離れました。推力のみ維持。船内メニューから自動操縦できます',5);return true;
     }
     const d=nearDoor();if(d){d.open=!d.open;ctx.notice(d.name+' / '+(d.open?'開く':'閉じる'));return true;}
     if(local.y<1&&local.z< -10.6&&Math.abs(local.x)<1.1){mode='pilot';local.set(-1.6,.6,-12.7);footVelocity=0;footGrounded=true;state.yaw=heading;state.pitch=.08;ctx.resetInputs();pauseInputs();syncUI();return true;}
@@ -556,6 +694,15 @@ window.createAirship = function (ctx) {
     previousGroundPosition.copy(player.position);cutaway=false;debug.visible=false;pauseInputs();ctx.resetInputs();syncUI();return true;
   }
   function cameraStep() {
+    ship.updateWorldMatrix(true,false);rainInverse.copy(ship.matrixWorld).invert();
+    camera.up.set(0,1,0);
+    windowWeather.time.value=clock;windowWeather.wet.value=hullWet;windowWeather.fog.value=condensation;
+    windowWeather.extreme.value=ctx.getWeather().type==='deluge'?ctx.getWeather().intensity:0;
+    white.roughness=.48-hullWet*.38;blue.roughness=.32-hullWet*.25;
+    white.color.setRGB(1-hullWet*.29,1-hullWet*.24,.94-hullWet*.19);
+    glass.roughness=.15+condensation*.7;
+    voxelWood.roughness=.46-hullWet*.32;wood.roughness=.43-hullWet*.28;
+    voxelRoot.visible=mode!=='ground'||ship.position.distanceTo(camera.position)<240;
     if(mode==='ground'){envelope.visible=cabin.visible=roof.visible=true;damageGroup.visible=false;exteriorDamage.visible=true;return;}
     attach();
     if(exterior){
@@ -564,14 +711,29 @@ window.createAirship = function (ctx) {
       eye.y=Math.max(eye.y,height(eye.x,eye.z)+2);camera.position.copy(eye);camera.lookAt(ship.position.x,ship.position.y+targetY,ship.position.z);
     }else{
       eye.copy(local);eye.y+=1.62/ship.scale.y;eye.applyMatrix4(ship.matrixWorld);camera.position.copy(eye);
-      temp.set(-Math.sin(state.yaw)*Math.cos(state.pitch),-Math.sin(state.pitch),-Math.cos(state.yaw)*Math.cos(state.pitch));camera.lookAt(eye.add(temp));
+      const reduced=$('motion-toggle').checked;
+      viewEuler.set(reduced?0:pitch,heading,reduced?0:roll);viewRotation.setFromEuler(viewEuler);
+      const relativeYaw=state.yaw-heading;
+      temp.set(-Math.sin(relativeYaw)*Math.cos(state.pitch),-Math.sin(state.pitch),-Math.cos(relativeYaw)*Math.cos(state.pitch)).applyQuaternion(viewRotation);
+      camera.up.set(0,1,0).applyQuaternion(viewRotation);camera.lookAt(eye.add(temp));
     }
     envelope.visible=mode==='ground'||exterior;cabin.visible=roof.visible=true;damageGroup.visible=mode!=='ground';exteriorDamage.visible=envelope.visible;
   }
   function setView() {exterior=!exterior;cutaway=false;if(!exterior){state.yaw=heading+(mode==='walk'?Math.PI:0);state.pitch=.08;}syncUI();cameraStep();}
+  function engageAutopilot(){
+    if(mode==='ground'||ctx.getPaused())return;
+    autopilot=!autopilot;
+    if(autopilot){
+      navigation.heading=heading;navigation.altitude=clamp(Math.max(100,ship.position.y-height(ship.position.x,ship.position.z)),35,400);
+      navigation.throttle=clamp(throttle||.55,.25,.8);navigation.avoiding=false;
+      $('airship-ap-heading').value=Math.round((heading*180/Math.PI%360+360)%360);$('airship-ap-alt').value=Math.round(navigation.altitude);
+    }
+    ctx.notice(autopilot?'自動操縦 ON：針路・対地高度を保持。席を離れても継続。手動入力で解除':'自動操縦 OFF：手動操縦に切り替えました',6);
+  }
   function launch() {
     if(mode!=='pilot'||ctx.getPaused())return;
-    takeoffY=ship.position.y+28;autopilot=true;throttle=Math.max(.35,throttle);ctx.notice('離陸アシスト：28 m 上昇して水平飛行へ。上昇／降下で解除',5);
+    if(!autopilot)engageAutopilot();navigation.altitude=Math.max(100,navigation.altitude);
+    ctx.notice('自動離陸 → 対地高度 '+Math.round(navigation.altitude)+' m を目標に巡航。暴風時は維持できない場合があります',6);
   }
   function jump() {if(mode==='walk'&&footGrounded&&!ctx.getPaused()){footVelocity=4;footGrounded=false;}}
   function getRoom() {
@@ -581,7 +743,7 @@ window.createAirship = function (ctx) {
     if(Math.abs(local.x)<1)return '03 / 中央通路';return local.x<0?(local.z<6?'04 / 寝室':'06 / 航海室'):(local.z<6?'05 / ギャレー':'07 / 機関室');
   }
   function getState() {
-    return {decks:2,upperDeckY,textureResolution:textureSize,cruiseSpeed,boostMultiplier,boosting,boostCharge,boostLocked,deckWidth:13.6,deckLength:60,deckAreaRatio:8,explosions,rooms:rooms.map(({name,hp,wet,fire,exploded})=>({name,hp,wet,fire,exploded})),shellVisible:envelope.visible,interiorVisible:cabin.visible,mode,position:ship.position.toArray(),velocity:velocity.toArray(),verticalSpeed,heading,throttle,clearance,contact,impact,totalContacts,autopilot,exterior,cutaway,local:local.toArray(),room:getRoom(),colliders:obstacles.length+doors.length,terrainSamples:groundSamples.length,doors:doors.map(d=>({name:d.name,open:d.open,t:d.t,x:d.x,z:d.z,side:d.side})),passengerWorld:new T.Vector3().copy(local).applyMatrix4(ship.matrixWorld).toArray()};
+    return {voxelCount,hullWet,condensation,roll,pitch,navigation:{...navigation},decks:2,upperDeckY,textureResolution:textureSize,cruiseSpeed,boostMultiplier,boosting,boostCharge,boostLocked,deckWidth:13.6,deckLength:60,deckAreaRatio:8,explosions,rooms:rooms.map(({name,hp,wet,fire,exploded})=>({name,hp,wet,fire,exploded})),shellVisible:envelope.visible,interiorVisible:cabin.visible,mode,position:ship.position.toArray(),velocity:velocity.toArray(),verticalSpeed,heading,throttle,clearance,contact,impact,totalContacts,autopilot,exterior,cutaway,local:local.toArray(),room:getRoom(),colliders:obstacles.length+doors.length,terrainSamples:groundSamples.length,doors:doors.map(d=>({name:d.name,open:d.open,t:d.t,x:d.x,z:d.z,side:d.side})),passengerWorld:new T.Vector3().copy(local).applyMatrix4(ship.matrixWorld).toArray()};
   }
   // UI is attached below; all controls invoke the same simulation entry points.
   function syncUI() {
@@ -604,7 +766,7 @@ window.createAirship = function (ctx) {
     const c=instrumentCanvas.getContext('2d');c.setTransform(2,0,0,2,0,0);c.fillStyle='#12282d';c.fillRect(0,0,1024,256);
     c.strokeStyle='#658d89';c.lineWidth=2;c.strokeRect(6,6,1012,244);
     const readings=[['SPEED',Math.round(velocity.length()*3.6),'km/h'],['ALTITUDE',Math.round(clearance),'m AGL'],['THRUST',Math.round(throttle*100),'%'],['VERTICAL',verticalSpeed.toFixed(1),'m/s']];
-    readings.forEach(([title,value,unit],i)=>{const x=i*256+128;c.textAlign='center';c.fillStyle='#a4c9ba';c.font='22px monospace';c.fillText(title,x,48);c.font='66px monospace';c.fillStyle='#eef4d2';c.fillText(value,x,143);c.font='22px monospace';c.fillStyle='#c7b88b';c.fillText(unit,x,203);});instrumentMap.needsUpdate=true;
+    readings.forEach(([title,value,unit],i)=>{const x=i*256+128;c.textAlign='center';c.fillStyle='#a4c9ba';c.font='22px monospace';c.fillText(title,x,48);c.font='66px monospace';c.fillStyle='#eef4d2';c.fillText(value,x,143);c.font='22px monospace';c.fillStyle='#c7b88b';c.fillText(unit,x,203);});c.font='16px monospace';c.fillStyle=navigation.limited?'#ffab79':'#94cfab';c.fillText(autopilot?(navigation.limited?'AP LIMITED — CHECK FLIGHT PATH':'AP — HEADING / ALTITUDE HOLD'):'MANUAL CONTROL',512,238);instrumentMap.needsUpdate=true;
   }
   function updateHUD(dt) {
     hudTick+=dt;if(hudTick<.1)return;hudTick=0;
@@ -620,7 +782,7 @@ window.createAirship = function (ctx) {
     $('airship-deck').textContent=local.y>upperDeckY-.15?'2F':'1F';
     $('airship-vs').textContent=(verticalSpeed>=0?'+':'')+verticalSpeed.toFixed(1);
     $('airship-heading').textContent=String((Math.round(heading*180/Math.PI)%360+360)%360).padStart(3,'0')+'°';
-    $('airship-status').textContent=impact>1?'GROUND CONTACT / 接触を吸収':contact?'LANDED / 接地':autopilot?'TAKEOFF ASSIST / 離陸中':mode==='walk'?'UNATTENDED / 推力維持':'CRUISING / 飛行中';
+    $('airship-status').textContent=impact>1?'GROUND CONTACT / 接触を吸収':contact?'LANDED / 接地':autopilot?(navigation.limited?'AP LIMITED / 制御限界':navigation.avoiding?'AP / 境界回避':'AUTOPILOT / 自動操縦'):mode==='walk'?'UNATTENDED / 推力維持':'CRUISING / 飛行中';
     $('airship-room').textContent=getRoom();
     $('airship-help').textContent=mode==='pilot'?'左で旋回 · 推力バーで加減速 · 右で昇降':'左で歩く · 背景ドラッグで見渡す · 扉の近くで開閉';
     document.querySelector('.movement-control .control-caption').textContent=mode==='pilot'?'左右で旋回':'船内を歩く';
@@ -641,6 +803,13 @@ window.createAirship = function (ctx) {
     $('airship-exit').disabled=mode!=='walk'||local.y>1||Math.hypot(local.x-entry.x,local.z-entry.z)>2.8||!contact||!hatch.open;
     $('game-mode-label').textContent=mode==='pilot'?'飛行船を操縦中':'飛行船の船内を探索中';
     $('airship-plan-dot').setAttribute('cx',String(60+local.x*11));$('airship-plan-dot').setAttribute('cy',String(12+(local.z+15)*5.5));
+    const weather=ctx.getWeather(),seconds=Math.ceil(weather.remaining/1000);
+    $('airship-autopilot').setAttribute('aria-pressed',String(autopilot));
+    $('airship-autopilot').textContent=autopilot?'自動操縦 ON · 解除':'自動操縦 OFF · 開始';
+    $('airship-ap-status').textContent=autopilot?(navigation.limited?'制御限界：針路・高度の維持は保証されません':navigation.avoiding?'境界回避：内陸へ旋回中':'針路・対地高度を保持中 / 船内歩行可'):'手動操縦 / 入力で自動操縦を解除';
+    $('airship-weather-alert').hidden=weather.type!=='deluge';
+    $('airship-weather-alert').textContent='超土砂降り '+String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')+' · 視界喪失 / 暴風'+(autopilot?' / AP制御限界':'');
+    $('airship-window-status').textContent='船体の濡れ '+Math.round(hullWet*100)+'% / 窓の白濁 '+Math.round(condensation*100)+'%';
     updateInstruments();
   }
   function createUI() {
@@ -648,17 +817,23 @@ window.createAirship = function (ctx) {
     const hud=document.createElement('section');hud.id='airship-hud';hud.hidden=true;hud.setAttribute('aria-label','飛行船の操縦と船内案内');
     hud.innerHTML=`<div class="as-title"><small>KAZENAGI <span>NT–01</span></small><h2>風凪 <i>空に、暮らす。</i></h2><p id="airship-mode"></p><span id="airship-biome"></span></div>
       <div class="as-telemetry"><div><small>対地高度 / AGL</small><strong><b id="airship-alt">0</b><em>m</em></strong></div><div><small>対地速度 / SPEED</small><strong><b id="airship-speed">0</b><em>km/h</em></strong></div><div><small>推力 / THRUST</small><strong id="airship-throttle">0%</strong></div><div><small>昇降 / VERTICAL</small><strong><b id="airship-vs">0</b><em>m/s</em></strong></div></div>
-      <div class="as-navigation"><span id="airship-status"></span><span id="airship-heading">000°</span></div>
+      <div id="airship-weather-alert" role="status" hidden></div><div class="as-navigation"><span id="airship-status"></span><span id="airship-heading">000°</span></div>
       <div class="as-plan"><svg viewBox="0 0 120 194" aria-label="船内見取り図。上から操縦室、ラウンジ、中央通路、寝室、ギャレー、航海室、機関室"><path d="M25 178V25Q60 -1 95 25V178Z"/><path d="M25 40h70M25 89h70M49 89v89M71 89v89M25 128h24M71 128h24"/><text x="60" y="30">操縦室</text><text x="60" y="65">ラウンジ</text><text x="37" y="112">寝室</text><text x="83" y="112">厨房</text><text x="37" y="150">航海</text><text x="83" y="150">機関</text><circle id="airship-plan-dot" cx="60" cy="30" r="4"/></svg><span id="airship-room"></span></div>
       <div id="airship-damage" role="status"></div>
       <div class="as-actions"><button id="airship-seat" data-icon="↔"></button><button id="airship-view" data-icon="◉"></button><button id="airship-more" data-icon="⋯" aria-label="船内メニュー" aria-expanded="false" aria-controls="airship-menu">船内メニュー</button></div><span id="airship-deck">1F</span>
       <div class="as-power"><label for="airship-power">推力 <output id="airship-power-value">0%</output></label><input id="airship-power" type="range" min="-25" max="100" step="1" value="0" aria-label="飛行船の推力"><button id="airship-stop" aria-label="推力をゼロにする">停止</button><button id="airship-boost" aria-pressed="false" aria-label="ブースト（長押し / Shift）"><span>BOOST</span><output id="airship-boost-value">100%</output></button></div>
-      <div id="airship-menu" hidden><strong id="airship-room-health"></strong><button id="airship-launch">離陸アシスト</button><button id="airship-map">世界地図</button><button id="airship-repair">長押しで修理</button><button id="airship-exit">搭乗口から降船</button><small>1F後方の階段で2Fの展望サロン・図書室へ。ブーストは長押し / Shift（最大8秒、16秒で全回復）。雨漏り・落雷の損傷は修理で回復。</small></div>
+      <div id="airship-menu" hidden><strong id="airship-room-health"></strong><button id="airship-autopilot" aria-pressed="false">自動操縦 OFF · 開始</button><span id="airship-ap-status"></span><label class="as-ap-field">目標針路 °<input id="airship-ap-heading" type="number" min="0" max="359" step="1" value="0"></label><label class="as-ap-field">対地高度 m<input id="airship-ap-alt" type="number" min="35" max="400" step="5" value="120"></label><small id="airship-window-status"></small><button id="airship-weather">天候を選ぶ</button><button id="airship-ultra">高精細描画 (Ultra)</button><button id="airship-launch">離陸アシスト</button><button id="airship-map">世界地図</button><button id="airship-repair">長押しで修理</button><button id="airship-exit">搭乗口から降船</button><small>自動操縦は針路・対地高度を保持（地形先読み／境界回避）。手動操縦入力で解除。暴風では制御限界になります。超土砂降りは現実の1時間、途中の天候変更不可。演出を控えめにするとカメラの傾きを抑えられます。1F後方の階段で2Fへ。ブーストは長押し / Shift（最大8秒、16秒で全回復）。雨漏り・落雷の損傷は修理で回復。</small></div>
       <div class="as-lift"><button id="airship-up" aria-label="飛行船を上昇">↑<small>上昇</small></button><button id="airship-down" aria-label="飛行船を降下">↓<small>降下</small></button></div>
       <div class="as-help"><span id="airship-help"></span></div>`;
     document.body.append(hud);
     button.addEventListener('click',()=>board(true));
     const gated=fn=>()=>{if(!ctx.getPaused()&&!ctx.getDead())fn();};
+    $('airship-autopilot').addEventListener('click',gated(engageAutopilot));
+    $('airship-weather').addEventListener('click',gated(()=>ctx.openDialog('events-dialog')));
+    $('airship-ultra').addEventListener('click',gated(()=>{const q=$('quality-select');q.value='2';q.dispatchEvent(new Event('change'));ctx.notice('Ultra 高精細描画。重い場合は設定から動作優先へ戻せます',5);}));
+    for(const id of ['airship-ap-heading','airship-ap-alt'])$(id).addEventListener('keydown',e=>e.stopPropagation());
+    $('airship-ap-heading').addEventListener('change',e=>{const n=Number(e.target.value);if(Number.isFinite(n)){navigation.heading=clamp(n,0,359)*Math.PI/180;e.target.value=Math.round(navigation.heading*180/Math.PI);}});
+    $('airship-ap-alt').addEventListener('change',e=>{const n=Number(e.target.value);if(Number.isFinite(n)){navigation.altitude=clamp(n,35,400);e.target.value=navigation.altitude;}});
     $('airship-launch').addEventListener('click',gated(launch));$('airship-seat').addEventListener('click',gated(interact));
     $('airship-view').addEventListener('click',gated(setView));$('airship-exit').addEventListener('click',gated(exit));
     $('airship-stop').addEventListener('click',gated(()=>{if(mode!=='pilot'){ctx.notice('推力を変えるには操縦席に戻ってください');return;}throttle=0;boostHeld=false;boosting=false;autopilot=false;ctx.notice('推力0。慣性で進みながら減速します');}));
@@ -670,11 +845,12 @@ window.createAirship = function (ctx) {
     hold('airship-boost',v=>{boostHeld=v;if(!v)boosting=false;});
     hold('airship-up',v=>{if(mode==='walk'){if(v)jump();}else ascentHeld=v;});hold('airship-down',v=>descentHeld=v);
     window.addEventListener('blur',pauseInputs);document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseInputs();});
-    window.addEventListener('keydown',e=>{if(e.repeat||ctx.getPaused()||ctx.getDead()||mode==='ground'||e.target.matches('input,select'))return;if(e.code==='KeyV'){e.preventDefault();setView();}});
+    window.addEventListener('keydown',e=>{if(e.repeat||ctx.getPaused()||ctx.getDead()||mode==='ground'||e.target.matches('input,select'))return;if(e.code==='KeyV'){e.preventDefault();setView();}if(e.code==='KeyP'){e.preventDefault();engageAutopilot();}});
   }
   function pauseInputs(){boostHeld=false;boosting=false;ascentHeld=false;descentHeld=false;repairHeld=false;input={mx:0,mz:0,running:false};}
   createUI();place();syncUI();updateInstruments();
-  const api={get aboard(){return mode!=='ground';},get piloting(){return mode==='pilot';},get interiorView(){return mode!=='ground'&&!exterior;},board,canBoard,interact,exit,place,jump,pauseInputs,getState,receiveLightning,
+  const api={get aboard(){return mode!=='ground';},get piloting(){return mode==='pilot';},get interiorView(){return mode!=='ground'&&!exterior;},board,canBoard,interact,exit,place,jump,pauseInputs,getState,receiveLightning,engageAutopilot,
+    sheltersRain(x,y,z){rainPoint.set(x,y,z).applyMatrix4(rainInverse);return Math.abs(rainPoint.x)<3.65&&Math.abs(rainPoint.z)<15.8&&rainPoint.y>-.8&&rainPoint.y<7;},
     setInput(value){input=value;},
     update(dt,paused){
       if(!paused){accumulator+=Math.min(dt,.1);while(accumulator>=1/90){physicsStep(1/90,input);accumulator-=1/90;}}

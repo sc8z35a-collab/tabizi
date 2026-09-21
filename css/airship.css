@@ -91,3 +91,21 @@ body:not(.airship-pilot) .as-power{visibility:hidden}
 @media(prefers-reduced-motion:reduce){#airship-hud *{transition:none}}
 
 @media(orientation:landscape) and (max-height:360px){.aboard-airship .movement-control{bottom:max(10px,env(safe-area-inset-bottom))}}
+
+/* Autopilot and weather remain operable on the compact landscape HUD. */
+#airship-hud #airship-autopilot{grid-column:1/-1;border-color:#c8b17b;font-size:12px}
+#airship-hud #airship-autopilot[aria-pressed=true]{background:#396d61;border-color:#bde9c7}
+#airship-ap-status{grid-column:1/-1;font-size:10px;line-height:1.7;color:#d1dac6}
+#airship-menu .as-ap-field{display:grid;gap:5px;font-size:10px;color:#d9cda9}
+#airship-menu .as-ap-field input{min-width:0;width:100%;box-sizing:border-box;min-height:44px;border:1px solid #8ba99c;border-radius:7px;background:#0c2229;color:#f8e9be;padding:7px;font:16px monospace;touch-action:manipulation}
+#airship-weather-alert{position:absolute;top:227px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);width:max-content;box-sizing:border-box;padding:7px 12px;background:#422e29ed;border:1px solid #d3a164;border-radius:7px;color:#ffe1ac;font:10px monospace;line-height:1.5;text-align:center}
+#deluge-countdown{color:#af6641;font-weight:600}
+.weather-buttons{flex-wrap:wrap}
+.weather-buttons [data-weather=deluge]{border-color:#a77649;color:#f2bd88}
+@media(orientation:landscape){#airship-weather-alert{top:168px;font-size:9px;padding:5px 9px}}
+@media(orientation:landscape) and (max-height:600px) and (max-width:1400px){
+ #airship-weather-alert{top:48px;font-size:8px;padding:4px 8px;max-width:calc(100% - 170px)}
+ #airship-damage.danger{top:75px;left:var(--as-edge);transform:none;max-width:180px}
+ #airship-menu .as-ap-field,#airship-ap-status{font-size:8px}
+ #airship-hud #airship-autopilot{font-size:10px}
+}
