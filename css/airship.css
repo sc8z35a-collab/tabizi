@@ -57,6 +57,37 @@ body:not(.airship-pilot) .as-power{visibility:hidden}
  .as-power{bottom:calc(var(--as-bottom) + 151px)}.as-lift{gap:6px}#airship-hud .as-lift button{width:54px;min-height:70px}
  .aboard-airship #joystick{width:110px;height:110px}.as-help{font-size:8px}
 }
+/* Charge stays visible next to thrust; text can shrink without shrinking touch targets. */
+.as-power{grid-template-columns:minmax(0,1fr) 48px 64px}
+#airship-hud #airship-boost{grid-column:3;grid-row:1/3;background:linear-gradient(0deg,#507c70 var(--charge,100%),#183a40 var(--charge,100%));border-color:#83bfb0;font:9px monospace;padding:5px}
+#airship-boost output{display:block;margin-top:4px;font:8px monospace}
+#airship-hud #airship-boost.active{border-color:#f4df9d;box-shadow:0 0 15px #c9e9c944}
+#airship-deck{position:absolute;top:77px;right:var(--as-edge);font:9px monospace}
+@media(orientation:landscape) and (max-height:600px) and (max-width:1400px){
+ #airship-hud{--as-bottom:max(8px,env(safe-area-inset-bottom));--as-edge:max(10px,env(safe-area-inset-left))}
+ .aboard-airship .brand,.aboard-airship .control-caption,.as-title,.as-navigation,.as-help{display:none!important}
+ .aboard-airship .topbar{top:max(4px,env(safe-area-inset-top));left:auto;right:max(8px,env(safe-area-inset-right));padding:0;width:auto}
+ .aboard-airship .tools{gap:2px}.aboard-airship .tools button{width:44px;height:44px;min-width:44px}
+ .aboard-airship #guide-button,.aboard-airship #sound-button,.aboard-airship #events-button,.aboard-airship #hud-button{display:none!important}
+ .as-telemetry{top:max(8px,env(safe-area-inset-top));left:var(--as-edge);transform:none;width:150px;padding:4px 7px;gap:10px;border-radius:6px;background:#15333b99}
+ .as-telemetry>div:nth-child(n+3){display:none}.as-telemetry small{font-size:5px;margin-bottom:2px}.as-telemetry strong{font-size:11px}.as-telemetry em{font-size:6px}
+ #airship-deck{top:max(12px,env(safe-area-inset-top));right:auto;left:170px;font-size:7px}
+ #airship-damage{display:none}#airship-damage.danger{display:block;top:46px;font-size:7px;padding:3px 6px;max-width:65vw;white-space:normal}
+ .as-actions{bottom:var(--as-bottom);width:142px;max-width:none;gap:5px}
+ #airship-hud .as-actions button{min-width:44px;min-height:44px;padding:0;font-size:0;border-radius:10px}
+ #airship-hud .as-actions button::before{content:attr(data-icon);font:18px sans-serif}
+ .as-power{bottom:calc(var(--as-bottom) + 49px);width:240px;max-width:calc(100% - 252px);grid-template-columns:minmax(0,1fr) 44px 48px;gap:4px;padding:3px 5px;border-radius:8px}
+ .as-power label{font-size:6px;height:8px}.as-power input{height:36px}.as-power output{font-size:7px}
+ #airship-hud .as-power button{min-height:44px;min-width:44px;font-size:7px;padding:2px}
+ #airship-hud #airship-boost{font-size:7px}#airship-boost output{font-size:6px;margin-top:2px}
+ .as-lift{right:max(10px,env(safe-area-inset-right));bottom:var(--as-bottom);gap:4px}
+ #airship-hud .as-lift button{width:44px;min-height:54px;font-size:19px;border-radius:12px}.as-lift small{font-size:6px;margin-top:2px}
+ .aboard-airship #joystick{width:92px;height:92px}.aboard-airship #joystick-knob{width:40px;height:40px}
+ .aboard-airship .movement-control{bottom:var(--as-bottom);left:var(--as-edge)}
+ .aboard-airship #action-notice{top:68px;max-width:250px;font-size:7px;line-height:1.5;padding:5px 9px}
+ #airship-menu{top:54px;right:max(8px,env(safe-area-inset-right));width:250px;max-height:calc(100dvh - 65px);padding:8px;gap:5px}
+ #airship-menu strong,#airship-menu small{font-size:8px}#airship-hud #airship-menu button{font-size:8px;min-height:44px}
+}
 @media(prefers-reduced-motion:reduce){#airship-hud *{transition:none}}
 
 @media(orientation:landscape) and (max-height:360px){.aboard-airship .movement-control{bottom:max(10px,env(safe-area-inset-bottom))}}
