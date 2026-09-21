@@ -7,8 +7,12 @@ window.createAirship = function (ctx) {
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const ship = new T.Group(); ship.name = 'KAZENAGI NT-01'; ship.scale.set(2,1.2,2); scene.add(ship);
   const boundary=ctx.worldBounds-90;
+  const cruiseSpeed=76, boostMultiplier=1.65, upperDeckY=3.3, envelopeLift=7.5;
+  let boostHeld=false, boosting=false, boostCharge=1, boostLocked=false;
+  const textureSize=Math.min(2048,ctx.renderer.capabilities.maxTextureSize);
+  const anisotropy=Math.min(8,ctx.renderer.capabilities.getMaxAnisotropy());
   const envelope = new T.Group(), cabin = new T.Group(), roof = new T.Group();
-  ship.add(envelope, cabin, roof);
+  ship.add(envelope, cabin, roof);envelope.position.y=envelopeLift;
   const obstacles = [], groundSamples = [], doors = [], propellers = [];
   const local = new T.Vector3(0, 0, -12), velocity = new T.Vector3();
   const temp = new T.Vector3(), world = new T.Vector3(), normal = new T.Vector3();
@@ -77,15 +81,30 @@ window.createAirship = function (ctx) {
     }
     return m;
   }
-  // Canvas wood grain and woven gas-cell surface; deterministic and entirely local.
+  // Local 2K material maps: mipmapped, anisotropic and shared by every instance.
+  // Fine grain stays sharp near the camera without requiring a 4K screen buffer.
   function texture(kind) {
-    const cv=document.createElement('canvas');cv.width=cv.height=256;const c=cv.getContext('2d');
-    c.fillStyle=kind==='wood'?'#b18b65':'#cccccc';c.fillRect(0,0,256,256);
-    for(let i=0;i<256;i++){const n=(Math.sin(i*91.31)*43758.5453)%1;c.strokeStyle=kind==='wood'?`rgba(55,30,14,${.04+Math.abs(n)*.13})`:`rgba(50,50,50,${.02+Math.abs(n)*.08})`;c.beginPath();c.moveTo(i,0);c.bezierCurveTo(i+Math.sin(i)*4,85,i-2,170,i,256);c.stroke();}
-    const t=new T.CanvasTexture(cv);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(kind==='wood'?2:36,kind==='wood'?8:16);return t;
+    const cv=document.createElement('canvas');cv.width=cv.height=textureSize;
+    const c=cv.getContext('2d'),n=textureSize;
+    c.fillStyle={wood:'#bd946c',fabric:'#c9c7bd',leather:'#b4856f',carpet:'#b0c4ba'}[kind];c.fillRect(0,0,n,n);
+    let seed=71;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+    if(kind==='wood'){
+      for(let x=0;x<n;x+=2){c.strokeStyle=`rgba(55,28,12,${.06+random()*.22})`;c.lineWidth=.6+random()*1.5;c.beginPath();c.moveTo(x,0);c.bezierCurveTo(x+Math.sin(x*.08)*22,n*.33,x-12,n*.7,x,n);c.stroke();}
+      for(let x=0;x<n;x+=n/8){c.fillStyle='#48302566';c.fillRect(x,0,2,n);for(let y=(x%3)*170;y<n;y+=n/2){c.fillRect(x,y,n/8,2);}}
+    }else if(kind==='leather'){
+      for(let i=0;i<100000;i++){const x=random()*n,y=random()*n;c.fillStyle=i%2?'#422a2138':'#ecd4b930';c.fillRect(x,y,1+random()*3,1+random()*2);}
+      c.strokeStyle='#e2c399';c.lineWidth=2;c.setLineDash([8,7]);c.strokeRect(12,12,n-24,n-24);
+    }else{
+      for(let i=0;i<n;i+=4){c.strokeStyle=i%8?'#34494738':'#ffffff2c';c.beginPath();c.moveTo(i,0);c.lineTo(i,n);c.moveTo(0,i);c.lineTo(n,i);c.stroke();}
+    }
+    const t=new T.CanvasTexture(cv);t.wrapS=t.wrapT=T.RepeatWrapping;t.anisotropy=anisotropy;
+    t.repeat.set(kind==='wood'?1:kind==='fabric'?24:2,kind==='wood'?4:kind==='fabric'?12:2);return t;
   }
   wood.map=texture('wood');wood.map.colorSpace=T.SRGBColorSpace;
+  wood.bumpMap=wood.map;wood.bumpScale=.018;wood.roughness=.43;
   white.bumpMap=texture('fabric');white.bumpScale=.035;
+  leather.map=texture('leather');leather.map.colorSpace=T.SRGBColorSpace;leather.bumpMap=leather.map;leather.bumpScale=.012;leather.roughness=.48;
+  carpet.bumpMap=texture('carpet');carpet.bumpScale=.025;bedding.bumpMap=carpet.bumpMap;bedding.bumpScale=.009;
   // 78 m envelope, with a swept cobalt equatorial ribbon and longitudinal seams.
   mesh(envelope,balloonGeo,white,0,16,0,10.6,17,39);
   const bandGeo=new T.SphereGeometry(1,96,12,0,Math.PI*2,Math.PI*.47,Math.PI*.075);
@@ -115,6 +134,7 @@ window.createAirship = function (ctx) {
   }
   // Geometry's plane is converted so its second coordinate follows the hull's Z axis.
   for(const a of [0,Math.PI/2,Math.PI,Math.PI*1.5])fin(a);
+  for(const p of groundSamples)p.y+=envelopeLift;
   // Aluminium gondola, glazing, structural ribs and warm interior.
   solid(blue,0,-.38,0,7,.65,30.8,'hull');
   solid(wood,0,-.06,0,6.65,.12,30,'deck');
@@ -149,8 +169,11 @@ window.createAirship = function (ctx) {
   solid(ivory,0,.4,-15.05,6.8,.8,.15,'bow');
   for(const x of [-3.35,-1.15,1.15,3.35])solid(ivory,x,1.85,-15.05,.1,2.6,.12,'windscreen frame');
   solid(ivory,0,1.6,15,6.8,3.2,.15,'stern');
-  solid(ivory,0,3.2,0,7,.18,30.7,'ceiling',roof);
-  for(let z=-13.5;z<15;z+=3){box(roof,brass,0,3.05,z,6.7,.08,.07);box(roof,warm,0,3.08,z,1.2,.045,.14);}
+  // Split deck slab leaves a real opening over the aft staircase.
+  solid(wood,0,3.2,-4.5,7,.2,21.4,'upper deck');
+  for(const side of [-1,1])solid(wood,side*2.16,3.2,9.9,2.68,.2,7.4,'upper deck');
+  solid(wood,0,3.2,14.45,7,.2,1.7,'upper landing');
+  for(let z=-13.5;z<6;z+=3){box(cabin,brass,0,3.05,z,6.7,.08,.07);box(cabin,warm,0,3.08,z,1.2,.045,.14);}
   for(const z of [-7,7]){const light=new T.PointLight('#ffdea6',5,15,2);light.position.set(0,2.8,z);cabin.add(light);}
   const portLamp=mat('port lamp','#e45647',0,.2,{emissive:'#ef3726',emissiveIntensity:2});
   const starboardLamp=mat('starboard lamp','#60c89e',0,.2,{emissive:'#21ae78',emissiveIntensity:2});
@@ -171,10 +194,11 @@ window.createAirship = function (ctx) {
   }
   bulkhead(-10,'01  FLIGHT DECK');bulkhead(-1,'03  CABIN CORRIDOR');
   for(const side of [-1,1]){
-    for(const span of [[-.9,1.95],[3.55,7.95],[9.55,14.9]])solid(ivory,side*.95,1.5,(span[0]+span[1])/2,.12,3,span[1]-span[0],'room partition');
+    // Rear corridor widens around the stairs so both service rooms remain reachable.
+    for(const [a,b,x] of [[-.9,1.95,.95],[3.55,6,.95],[6,7.95,1.45],[9.55,14.9,1.45]])solid(ivory,side*x,1.5,(a+b)/2,.12,3,b-a,'room partition');
     solid(ivory,side*2.17,1.5,6,2.35,3,.12,'room partition');
     door(side*.95,2.75,true,side<0?'04  SUITE':'05  GALLEY');
-    door(side*.95,8.75,true,side<0?'06  CHART ROOM':'07  ENGINE ROOM');
+    door(side*1.45,8.75,true,side<0?'06  CHART ROOM':'07  ENGINE ROOM');
   }
   function seat(x,z) {
     // Furniture solids intentionally use conservative aligned bounds.
@@ -186,8 +210,8 @@ window.createAirship = function (ctx) {
   solid(navy,0,.73,-14.12,5.5,1.3,.96,'instrument console');
   box(cabin,brass,0,1.41,-14.12,5.55,.08,1.02);
   seat(-1.6,-12.7);seat(1.6,-12.7);
-  const instrumentCanvas=document.createElement('canvas');instrumentCanvas.width=1024;instrumentCanvas.height=256;
-  const instrumentMap=new T.CanvasTexture(instrumentCanvas);instrumentMap.colorSpace=T.SRGBColorSpace;
+  const instrumentCanvas=document.createElement('canvas');instrumentCanvas.width=2048;instrumentCanvas.height=512;
+  const instrumentMap=new T.CanvasTexture(instrumentCanvas);instrumentMap.colorSpace=T.SRGBColorSpace;instrumentMap.anisotropy=anisotropy;
   const instrument=mesh(cabin,new T.PlaneGeometry(4.8,.78),new T.MeshBasicMaterial({map:instrumentMap}),0,1.38,-13.61);instrument.rotation.x=-.28;instrument.rotation.y=0;
   for(const s of [-1,1]){
     rod(cabin,silver,[s*1.5,.9,-13.5],[s*1.5,1.37,-13.0],.045);
@@ -210,7 +234,7 @@ window.createAirship = function (ctx) {
   solid(navy,2.8,1.05,5.25,1.05,2.1,.9,'refrigerator');
   // Chart room: navigation table with an actual drawn local chart and bookcases.
   solid(wood,-2.6,.7,9.8,1.3,1.4,2.4,'chart table');
-  const chart=document.createElement('canvas');chart.width=512;chart.height=512;const cc=chart.getContext('2d');cc.fillStyle='#d8cba2';cc.fillRect(0,0,512,512);
+  const chart=document.createElement('canvas');chart.width=2048;chart.height=2048;const cc=chart.getContext('2d');cc.scale(4,4);cc.fillStyle='#d8cba2';cc.fillRect(0,0,512,512);
   cc.strokeStyle='#6f8b77';cc.lineWidth=2;
   for(let i=0;i<12;i++){cc.beginPath();for(let j=0;j<100;j++){const a=j/99*Math.PI*2;cc.lineTo(256+Math.cos(a)*(20+i*20)+Math.sin(a*5)*12,256+Math.sin(a)*(20+i*15));}cc.stroke();}
   cc.fillStyle='#354c54';cc.font='22px serif';cc.fillText('THE VERDANT WILDS',95,40);cc.fillText('N',250,82);cc.strokeRect(15,15,482,482);
@@ -230,13 +254,68 @@ window.createAirship = function (ctx) {
   mesh(cabin,cylinderGeo,leather,-.63,.65,14.6,.15,1.05,.15);
   rod(cabin,brass,[3.22,2.8,6.2],[3.22,2.8,14.6],.035);
   text(cabin,'02  OBSERVATION LOUNGE',0,2.65,-1.11,2.3,.27,Math.PI,'#4d665c');
+  // Second storey: panoramic saloon, library and a physically traversable stair.
+  const upper=new T.Group();upper.name='Upper observation deck';cabin.add(upper);
+  for(let i=0;i<20;i++){
+    const top=(i+1)*upperDeckY/20,z=6.4+(i+.5)*.36;
+    solid(wood,0,top/2,z,1.56,top,.36,'stair');
+    box(cabin,brass,0,top+.008,z-.16,1.54,.016,.025);
+  }
+  for(const side of [-1,1]){
+    // Stairwell balustrades leave the upper landing open at z=13.6.
+    solid(glass,side*.9,upperDeckY+.5,9.9,.07,1,7.4,'stair rail');
+    rod(cabin,brass,[side*.9,4.35,6.2],[side*.9,4.35,13.6],.035);
+    for(let z=6.6;z<13.5;z+=1.2)rod(cabin,silver,[side*.9,upperDeckY,z],[side*.9,4.35,z],.025);
+    solid(ivory,side*3.4,3.7,0,.16,.8,30,'upper sill');
+    solid(glass,side*3.4,5.05,0,.06,1.9,30,'upper window');
+    for(let z=-15;z<=15;z+=2.5){solid(ivory,side*3.4,4.9,z,.12,3.2,.12,'upper frame');box(upper,brass,side*3.28,4.15,z,.04,.04,2.35);}
+    solid(ivory,side*2.25,6.5,0,2.5,.18,30.6,'upper ceiling',roof);
+    for(let z=-8.2;z<5;z+=4.2){
+      const x=side*2.35;
+      solid(wood,x,3.55,z,1.35,.5,1.8,'upper sofa');
+      mesh(upper,sphereGeo,leather,x,3.87,z,.65,.22,.83);
+      solid(leather,x+side*.55,4.32,z,.18,.9,1.8,'sofa back');
+      for(const dz of [-.85,.85])box(upper,wood,x,4.06,z+dz,1.3,.16,.12);
+      for(const dz of [-.45,.45])mesh(upper,sphereGeo,bedding,x+side*.37,4.36,z+dz,.14,.3,.3);
+      solid(wood,side*1.15,3.77,z,.55,.12,1.3,'coffee table');
+      rod(upper,brass,[side*1.15,3.3,z],[side*1.15,3.7,z],.055);
+      for(let j=0;j<3;j++)box(upper,[blue,ivory,leather][j],side*1.15,3.85+j*.032,z,.33,.03,.46);
+      mesh(upper,cylinderGeo,ivory,side*1.15,3.96,z+.43,.065,.18,.065);
+    }
+    solid(wood,side*2.7,4.3,14.6,1.1,2,.4,'upper bookcase');
+    for(let row=0;row<4;row++)for(let i=0;i<7;i++){
+      const x=side*2.7-.43+i*.14,y=3.52+row*.45;
+      box(upper,[navy,leather,ivory,green][(i+row)%4],x,y,14.32,.115,.32,.2);
+      box(upper,brass,x,y+.09,14.21,.08,.012,.015);
+    }
+    for(let z=-13;z<14;z+=3){box(upper,brass,side*3.24,5.85,z,.08,.3,.18);box(upper,warm,side*3.18,5.85,z,.08,.22,.13);}
+  }
+  solid(glass,0,4.92,-15.05,6.8,3.1,.08,'upper windscreen');
+  solid(glass,0,4.92,15.05,6.8,3.1,.08,'upper stern window');
+  solid(glass,0,6.5,0,2,.12,30.6,'skylight',roof);
+  for(let z=-14.5;z<15;z+=2.5){box(roof,ivory,0,6.37,z,6.8,.14,.1);box(roof,warm,0,6.27,z,1.4,.04,.06);}
+  box(upper,carpet,0,3.312,-4.5,1.4,.024,20.8);
+  text(upper,'08  /  PANORAMA SALOON',0,5.95,-14.93,3.1,.28,0,'#254f70');
+  text(cabin,'2F  ↑  PANORAMA / LIBRARY',0,2.72,6.1,1.7,.22,Math.PI,'#e4c388');
+  text(upper,'1F  /  FLIGHT DECK',0,5.3,14.9,2.4,.25,Math.PI,'#254f70');
+  const upperLight=new T.PointLight('#ffe4bb',7,25,2);upperLight.position.set(0,5.9,-3);upper.add(upperLight);
+  // Small-scale joinery, seat piping, vent slots and recessed instrument bezels.
+  for(const side of [-1,1])for(let z=-14;z<15;z+=.45){
+    box(cabin,silver,side*3.27,.27,z,.04,.17,.012);
+    box(upper,brass,side*3.27,3.44,z,.045,.06,.014);
+  }
+  for(let i=0;i<24;i++){box(cabin,silver,-2.55+i*.22,1.45,-14.1,.09,.018,.4);}
+  for(const side of [-1,1])for(const z of [-8.3,-5.8,-3.3]){
+    rod(cabin,brass,[side*2.3-.34,.71,z-.35],[side*2.3+.34,.71,z-.35],.012);
+    for(let i=0;i<7;i++)box(cabin,brass,side*2.3-.3+i*.1,1.39,z+.265,.018,.014,.014);
+  }
   // Port boarding hatch is an explicit interaction: no unsafe midair exit.
   entry=new T.Vector3(-3.4,0,-2);
   hatch=door(-3.4,-2,true,'搭乗ハッチ',false);
   text(cabin,'BOARDING',-3.52,2.9,-2,1.8,.32,-Math.PI/2,'#254f70');
   // Discrete hull contact grid at <= 1.5 m spacing plus envelope and fins.
   for(let x=-3.5;x<=3.5;x+=1.4)for(let z=-15;z<=15;z+=1.5)groundSamples.push(new T.Vector3(x,-.71,z));
-  for(let z=-38;z<=38;z+=2){const r=Math.sqrt(1-z*z/(39*39));for(let j=0;j<12;j++){const a=Math.PI+j*Math.PI/11;groundSamples.push(new T.Vector3(10.6*r*Math.cos(a),16+17*r*Math.sin(a),z));}}
+  for(let z=-38;z<=38;z+=2){const r=Math.sqrt(1-z*z/(39*39));for(let j=0;j<12;j++){const a=Math.PI+j*Math.PI/11;groundSamples.push(new T.Vector3(10.6*r*Math.cos(a),16+envelopeLift+17*r*Math.sin(a),z));}}
   // Batch static primitives by geometry/material. Interior detail costs tens of
   // draw calls, not a call per screw or seat. Doors/propellers remain dynamic.
   function batch(group) {
@@ -250,24 +329,24 @@ window.createAirship = function (ctx) {
       inst.castShadow=first.castShadow;inst.receiveShadow=true;inst.computeBoundingSphere();group.add(inst);
     }
   }
-  batch(envelope);batch(cabin);batch(roof);
+  batch(envelope);batch(cabin);batch(upper);batch(roof);
   const damageGroup=new T.Group(), exteriorDamage=new T.Group();ship.add(damageGroup,exteriorDamage);
-  const roomSpecs=[['操縦室',0,-12],['ラウンジ',0,-5],['寝室',-2.2,3],['ギャレー',2.2,3],['航海室',-2.2,10],['機関室',2.2,10]];
-  const rooms=roomSpecs.map(([name,x,z])=>{
+  const roomSpecs=[['操縦室',0,-12],['ラウンジ',0,-5],['寝室',-2.2,3],['ギャレー',2.2,3],['航海室',-2.2,10],['機関室',2.2,10],['展望サロン',0,-5,upperDeckY],['空中図書室',2.2,10,upperDeckY]];
+  const rooms=roomSpecs.map(([name,x,z,y=0])=>{
     const scarMat=mat('scar '+name,'#252321',0,1);
-    const scar=box(damageGroup,scarMat,x,.028,z,1.65,.025,3.8);scar.visible=false;
-    const panel=box(damageGroup,scarMat,x+(x<0?-.6:.6),1.25,z+.7,.4,2.2,.12);panel.visible=false;
+    const scar=box(damageGroup,scarMat,x,y+.028,z,1.65,.025,3.8);scar.visible=false;
+    const panel=box(damageGroup,scarMat,x+(x<0?-.6:.6),y+1.25,z+.7,.4,2.2,.12);panel.visible=false;
     const fireMat=new T.MeshBasicMaterial({color:'#ff9c32',transparent:true,opacity:0,depthWrite:false});
-    const fire=mesh(damageGroup,sphereGeo,fireMat,x,.8,z,.45,.7,.5);fire.visible=false;
+    const fire=mesh(damageGroup,sphereGeo,fireMat,x,y+.8,z,.45,.7,.5);fire.visible=false;
     const smokeMat=new T.MeshBasicMaterial({color:'#353b3e',transparent:true,opacity:0,depthWrite:false});
-    const smoke=mesh(exteriorDamage,sphereGeo,smokeMat,x,33,z,.7,2,.7);smoke.visible=false;
-    return {name,x,z,hp:100,wet:0,fire:0,blast:0,exploded:false,cooldown:0,scar,panel,flame:fire,smoke};
+    const smoke=mesh(exteriorDamage,sphereGeo,smokeMat,x,33+envelopeLift,z,.7,2,.7);smoke.visible=false;
+    return {name,x,y,z,hp:100,wet:0,fire:0,blast:0,exploded:false,cooldown:0,scar,panel,flame:fire,smoke};
   });
   const blastLight=new T.PointLight('#ffad51',0,18,2);damageGroup.add(blastLight);
   const debrisMat=mat('debris','#493b32',.3,.95),debrisGeo=new T.BoxGeometry(.12,.08,.1);
   const debris=new T.InstancedMesh(debrisGeo,debrisMat,48);damageGroup.add(debris);debris.count=0;debris.frustumCulled=false;
   const fragments=[],fragmentDummy=new T.Object3D();
-  function currentRoom(){return rooms[local.z< -10?0:local.z< -1?1:local.x<0?(local.z<6?2:4):(local.z<6?3:5)];}
+  function currentRoom(){if(local.y>upperDeckY-.15)return rooms[local.z<6?6:7];return rooms[local.z< -10?0:local.z< -1?1:local.x<0?(local.z<6?2:4):(local.z<6?3:5)];}
   function damageRoom(room,amount,cause){
     if(room.hp<=0)return;
     room.hp=Math.max(0,room.hp-amount);room.blast=.5;
@@ -275,18 +354,18 @@ window.createAirship = function (ctx) {
       room.exploded=true;room.hp=Math.max(0,room.hp-22);room.fire=1;room.blast=1;explosions++;
       for(let i=0;i<24;i++){
         if(fragments.length>=48)fragments.shift();
-        fragments.push({p:new T.Vector3(room.x,.9,room.z),v:new T.Vector3((Math.random()-.5)*3,1+Math.random()*3,(Math.random()-.5)*4),life:1.8});
+        fragments.push({p:new T.Vector3(room.x,room.y+.9,room.z),v:new T.Vector3((Math.random()-.5)*3,1+Math.random()*3,(Math.random()-.5)*4),life:1.8});
       }
       // Closed bulkheads attenuate the pressure wave; damage never deletes the walkable deck.
       const protectedRoom=doors.some(d=>!d.open&&Math.hypot(d.x-room.x,d.z-room.z)<5);
-      for(const other of rooms)if(other!==room&&Math.hypot(other.x-room.x,other.z-room.z)<8)other.hp=Math.max(1,other.hp-(protectedRoom?4:14));
+      for(const other of rooms)if(other!==room&&Math.hypot(other.x-room.x,other.y-room.y,other.z-room.z)<8)other.hp=Math.max(1,other.hp-(protectedRoom?4:14));
       ctx.playCue?.('hurt');ctx.notice(room.name+'で爆発！ '+cause+'。部屋で「修理」を長押ししてください',6);
     }else ctx.notice(room.name+'：'+cause+' / 耐久 '+Math.round(room.hp)+'%',4);
   }
   function receiveLightning(index=Math.floor(Math.random()*rooms.length)){
     const r=rooms[index];if(!r)return null;
     damageRoom(r,48+r.wet*.25,'落雷による配電盤の破損');r.wet=Math.min(100,r.wet+18);
-    ship.updateWorldMatrix(true,false);return new T.Vector3(r.x,31,r.z).applyMatrix4(ship.matrixWorld);
+    ship.updateWorldMatrix(true,false);return new T.Vector3(r.x,31+envelopeLift,r.z).applyMatrix4(ship.matrixWorld);
   }
   function damageStep(dt){
     const w=ctx.getWeather(),raining=w.type==='rain'||w.type==='storm';hazardClock+=dt;
@@ -304,9 +383,9 @@ window.createAirship = function (ctx) {
       r.flame.visible=r.blast>0||r.fire>0;r.flame.material.opacity=Math.min(.85,r.blast+r.fire*.6);
       r.flame.scale.y=.5+r.fire*.6+Math.sin(hazardClock*13)*.15;
       r.smoke.visible=r.hp<50;r.smoke.material.opacity=(1-r.hp/100)*.55;
-      r.smoke.position.y=32+(Math.sin(hazardClock*.6+r.z)+1)*2;
+      r.smoke.position.y=32+envelopeLift+(Math.sin(hazardClock*.6+r.z)+1)*2;
     }
-    const brightest=rooms.reduce((a,b)=>a.blast>b.blast?a:b);blastLight.position.set(brightest.x,1.8,brightest.z);
+    const brightest=rooms.reduce((a,b)=>a.blast>b.blast?a:b);blastLight.position.set(brightest.x,brightest.y+1.8,brightest.z);
     blastLight.intensity=$('motion-toggle').checked?0:brightest.blast*14;
     for(let i=fragments.length-1;i>=0;i--){const f=fragments[i];f.life-=dt;f.v.y-=dt*5;f.p.addScaledVector(f.v,dt);if(f.life<=0)fragments.splice(i,1);}
     debris.count=fragments.length;fragments.forEach((f,i)=>{fragmentDummy.position.copy(f.p);fragmentDummy.rotation.set(f.life*4,f.life*3,0);fragmentDummy.updateMatrix();debris.setMatrixAt(i,fragmentDummy.matrix);});if(fragments.length)debris.instanceMatrix.needsUpdate=true;
@@ -350,7 +429,16 @@ window.createAirship = function (ctx) {
     const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.04));
     for(let i=0;i<steps;i++)for(const axis of ['x','z']){
       const before=local[axis];local[axis]+=(axis==='x'?dx:dz)/steps;
-      if(all.some(b=>intersects(local,b)))local[axis]=before;
+      const hits=all.filter(b=>intersects(local,b));
+      if(hits.length){
+        const top=Math.max(...hits.map(b=>b.max.y)),oldY=local.y;
+        // Capsule step-up only on actual stair treads, never through furniture.
+        if(hits.every(b=>b.name==='stair')&&top-oldY<=.19&&footVelocity<=0){
+          local.y=top;
+          if(all.some(b=>intersects(local,b))){local.y=oldY;local[axis]=before;}
+          else {footVelocity=0;footGrounded=true;}
+        }else local[axis]=before;
+      }
     }
     footGrounded=false;footVelocity-=9.81*dt;let next=local.y+footVelocity*dt;
     for(const b of all){
@@ -388,7 +476,14 @@ window.createAirship = function (ctx) {
     const turn=yawRate*dt;heading+=turn;if(mode!=='ground')state.yaw+=turn;
     ship.rotation.y=heading;
     forward.set(-Math.sin(heading),0,-Math.cos(heading));
-    velocity.lerp(temp.copy(forward).multiplyScalar(throttle*38*(.2+.8*rooms[5].hp/100)),1-Math.exp(-dt*.24));
+    const requested=boostHeld||keys.has('ShiftLeft')||keys.has('ShiftRight');
+    if(boostLocked&&boostCharge>=.35)boostLocked=false;
+    boosting=mode==='pilot'&&requested&&!boostLocked&&boostCharge>0&&throttle>0&&rooms[5].hp>40;
+    boostCharge=clamp(boostCharge+dt*(boosting?-1/8:1/16),0,1);
+    if(boostCharge===0)boostLocked=true;
+    const maxSpeed=cruiseSpeed*(boosting?boostMultiplier:1)*(.2+.8*rooms[5].hp/100);
+    velocity.lerp(temp.copy(forward).multiplyScalar(throttle*maxSpeed),1-Math.exp(-dt*(boosting?.65:.24)));
+    // Boost release decays naturally back to cruise rather than braking instantly.
     const integrity=rooms.reduce((n,r)=>n+r.hp,0)/(rooms.length*100);
     verticalSpeed+=(climb*5*(.35+.65*integrity)-(integrity<.5?( .5-integrity)*3:0)-verticalSpeed)*(1-Math.exp(-dt*.65));
     if(ship.position.y>height(ship.position.x,ship.position.z)+520)verticalSpeed=Math.min(0,verticalSpeed);
@@ -398,7 +493,7 @@ window.createAirship = function (ctx) {
     damageStep(dt);
     for(const d of doors)updateDoor(d,dt);
     if(mode==='walk')walkStep(dt,controls);
-    for(const prop of propellers)prop.rotation.z+=dt*(4+Math.abs(throttle)*65);
+    for(const prop of propellers)prop.rotation.z+=dt*(4+Math.abs(throttle)*(boosting?108:65));
   }
   function attach() {
     ship.updateWorldMatrix(true,false);world.copy(local).applyMatrix4(ship.matrixWorld);
@@ -440,7 +535,7 @@ window.createAirship = function (ctx) {
     ship.updateWorldMatrix(true,false);world.copy(entry).applyMatrix4(ship.matrixWorld);
     return mode==='ground'&&velocity.length()<.8&&Math.hypot(state.x-world.x,state.z-world.z)<5&&Math.abs(state.y-world.y)<5;
   }
-  function nearDoor() {let nearest=null,distance=1.55;for(const d of doors){const v=Math.hypot(local.x-d.x,local.z-d.z);if(v<distance){nearest=d;distance=v;}}return nearest;}
+  function nearDoor() {if(local.y>1)return null;let nearest=null,distance=1.55;for(const d of doors){const v=Math.hypot(local.x-d.x,local.z-d.z);if(v<distance){nearest=d;distance=v;}}return nearest;}
   function interact() {
     if(ctx.getPaused()||ctx.getDead())return false;
     if(mode==='ground')return canBoard()?board():false;
@@ -449,11 +544,11 @@ window.createAirship = function (ctx) {
       ctx.resetInputs();pauseInputs();syncUI();ctx.notice('操縦席を離れました。推力は維持され、飛行船は動き続けます',5);return true;
     }
     const d=nearDoor();if(d){d.open=!d.open;ctx.notice(d.name+' / '+(d.open?'開く':'閉じる'));return true;}
-    if(local.z< -10.6&&Math.abs(local.x)<1.1){mode='pilot';local.set(-1.6,.6,-12.7);footVelocity=0;footGrounded=true;state.yaw=heading;state.pitch=.08;ctx.resetInputs();pauseInputs();syncUI();return true;}
+    if(local.y<1&&local.z< -10.6&&Math.abs(local.x)<1.1){mode='pilot';local.set(-1.6,.6,-12.7);footVelocity=0;footGrounded=true;state.yaw=heading;state.pitch=.08;ctx.resetInputs();pauseInputs();syncUI();return true;}
     ctx.notice('扉または操縦席へ近づき、画面の操作ボタンをタップしてください');return false;
   }
   function exit() {
-    if(mode!=='walk'||Math.hypot(local.x-entry.x,local.z-entry.z)>2.8){ctx.notice('ラウンジ左舷の搭乗口へ移動してください');return false;}
+    if(mode!=='walk'||local.y>1||Math.hypot(local.x-entry.x,local.z-entry.z)>2.8){ctx.notice('ラウンジ左舷の搭乗口へ移動してください');return false;}
     if(!hatch.open||hatch.t<.95){ctx.notice('搭乗ハッチを開いてから降船してください');return false;}
     ship.updateWorldMatrix(true,false);world.copy(entry).applyMatrix4(ship.matrixWorld);temp.set(-5.5,0,-2).applyMatrix4(ship.matrixWorld);
     if(!contact||ctx.lakeDistance(temp.x,temp.z)<105||velocity.length()>.8||Math.abs(verticalSpeed)>.35||Math.abs(world.y-height(temp.x,temp.z))>5){ctx.notice('飛行中は降船できません。接地して推力を0にしてください');return false;}
@@ -461,7 +556,7 @@ window.createAirship = function (ctx) {
     previousGroundPosition.copy(player.position);cutaway=false;debug.visible=false;pauseInputs();ctx.resetInputs();syncUI();return true;
   }
   function cameraStep() {
-    if(mode==='ground'){envelope.visible=true;cabin.visible=roof.visible=damageGroup.visible=false;exteriorDamage.visible=true;return;}
+    if(mode==='ground'){envelope.visible=cabin.visible=roof.visible=true;damageGroup.visible=false;exteriorDamage.visible=true;return;}
     attach();
     if(exterior){
       const distance=Math.max(175,82/(Math.tan(camera.fov*Math.PI/360)*camera.aspect)), targetY=18;
@@ -471,7 +566,7 @@ window.createAirship = function (ctx) {
       eye.copy(local);eye.y+=1.62/ship.scale.y;eye.applyMatrix4(ship.matrixWorld);camera.position.copy(eye);
       temp.set(-Math.sin(state.yaw)*Math.cos(state.pitch),-Math.sin(state.pitch),-Math.cos(state.yaw)*Math.cos(state.pitch));camera.lookAt(eye.add(temp));
     }
-    envelope.visible=mode==='ground'||exterior;cabin.visible=roof.visible=damageGroup.visible=mode!=='ground'&&!exterior;exteriorDamage.visible=envelope.visible;
+    envelope.visible=mode==='ground'||exterior;cabin.visible=roof.visible=true;damageGroup.visible=mode!=='ground';exteriorDamage.visible=envelope.visible;
   }
   function setView() {exterior=!exterior;cutaway=false;if(!exterior){state.yaw=heading+(mode==='walk'?Math.PI:0);state.pitch=.08;}syncUI();cameraStep();}
   function launch() {
@@ -480,11 +575,13 @@ window.createAirship = function (ctx) {
   }
   function jump() {if(mode==='walk'&&footGrounded&&!ctx.getPaused()){footVelocity=4;footGrounded=false;}}
   function getRoom() {
+    if(local.y>upperDeckY-.15)return local.z<6?'2F / 展望サロン':'2F / 空中図書室';
+    if(local.z>6.2&&Math.abs(local.x)<.82&&local.y>.1)return '1F ↔ 2F / 階段';
     if(local.z< -10)return '01 / 操縦室';if(local.z< -1)return '02 / 展望ラウンジ';
     if(Math.abs(local.x)<1)return '03 / 中央通路';return local.x<0?(local.z<6?'04 / 寝室':'06 / 航海室'):(local.z<6?'05 / ギャレー':'07 / 機関室');
   }
   function getState() {
-    return {deckWidth:13.6,deckLength:60,deckAreaRatio:4,explosions,rooms:rooms.map(({name,hp,wet,fire,exploded})=>({name,hp,wet,fire,exploded})),shellVisible:envelope.visible,interiorVisible:cabin.visible,mode,position:ship.position.toArray(),velocity:velocity.toArray(),verticalSpeed,heading,throttle,clearance,contact,impact,totalContacts,autopilot,exterior,cutaway,local:local.toArray(),room:getRoom(),colliders:obstacles.length+doors.length,terrainSamples:groundSamples.length,doors:doors.map(d=>({name:d.name,open:d.open,t:d.t,x:d.x,z:d.z,side:d.side})),passengerWorld:new T.Vector3().copy(local).applyMatrix4(ship.matrixWorld).toArray()};
+    return {decks:2,upperDeckY,textureResolution:textureSize,cruiseSpeed,boostMultiplier,boosting,boostCharge,boostLocked,deckWidth:13.6,deckLength:60,deckAreaRatio:8,explosions,rooms:rooms.map(({name,hp,wet,fire,exploded})=>({name,hp,wet,fire,exploded})),shellVisible:envelope.visible,interiorVisible:cabin.visible,mode,position:ship.position.toArray(),velocity:velocity.toArray(),verticalSpeed,heading,throttle,clearance,contact,impact,totalContacts,autopilot,exterior,cutaway,local:local.toArray(),room:getRoom(),colliders:obstacles.length+doors.length,terrainSamples:groundSamples.length,doors:doors.map(d=>({name:d.name,open:d.open,t:d.t,x:d.x,z:d.z,side:d.side})),passengerWorld:new T.Vector3().copy(local).applyMatrix4(ship.matrixWorld).toArray()};
   }
   // UI is attached below; all controls invoke the same simulation entry points.
   function syncUI() {
@@ -492,6 +589,7 @@ window.createAirship = function (ctx) {
     $('airship-hud').hidden=mode==='ground';$('airship-board').hidden=mode!=='ground';
     $('airship-mode').textContent=mode==='pilot'?'FLIGHT DECK / 操縦中':'ON BOARD / 船内を探索';
     $('airship-seat').disabled=false;
+    $('airship-boost').disabled=mode!=='pilot';
     document.body.classList.toggle('airship-pilot',mode==='pilot');
     $('airship-seat').textContent=mode==='pilot'?'船内を歩く':'扉・操縦席';
     $('airship-view').textContent=exterior?'船内視点':'外観を見る';
@@ -500,10 +598,10 @@ window.createAirship = function (ctx) {
     $('airship-up').setAttribute('aria-label',mode==='walk'?'船内でジャンプ':'飛行船を上昇');
     $('airship-power').disabled=mode!=='pilot';
     if(mode==='ground')document.querySelector('.movement-control .control-caption').textContent='移動';
-    envelope.visible=mode==='ground'||exterior;cabin.visible=roof.visible=damageGroup.visible=mode!=='ground'&&!exterior;exteriorDamage.visible=envelope.visible;
+    envelope.visible=mode==='ground'||exterior;cabin.visible=roof.visible=true;damageGroup.visible=mode!=='ground';exteriorDamage.visible=envelope.visible;
   }
   function updateInstruments() {
-    const c=instrumentCanvas.getContext('2d');c.fillStyle='#12282d';c.fillRect(0,0,1024,256);
+    const c=instrumentCanvas.getContext('2d');c.setTransform(2,0,0,2,0,0);c.fillStyle='#12282d';c.fillRect(0,0,1024,256);
     c.strokeStyle='#658d89';c.lineWidth=2;c.strokeRect(6,6,1012,244);
     const readings=[['SPEED',Math.round(velocity.length()*3.6),'km/h'],['ALTITUDE',Math.round(clearance),'m AGL'],['THRUST',Math.round(throttle*100),'%'],['VERTICAL',verticalSpeed.toFixed(1),'m/s']];
     readings.forEach(([title,value,unit],i)=>{const x=i*256+128;c.textAlign='center';c.fillStyle='#a4c9ba';c.font='22px monospace';c.fillText(title,x,48);c.font='66px monospace';c.fillStyle='#eef4d2';c.fillText(value,x,143);c.font='22px monospace';c.fillStyle='#c7b88b';c.fillText(unit,x,203);});instrumentMap.needsUpdate=true;
@@ -514,6 +612,12 @@ window.createAirship = function (ctx) {
     $('airship-speed').textContent=Math.round(velocity.length()*3.6);
     $('airship-alt').textContent=Math.max(0,clearance).toFixed(1);
     $('airship-throttle').textContent=Math.round(throttle*100)+'%';
+    $('airship-boost').classList.toggle('active',boosting);
+    $('airship-boost').setAttribute('aria-pressed',String(boosting));
+    $('airship-boost').style.setProperty('--charge',Math.round(boostCharge*100)+'%');
+    $('airship-boost-value').textContent=Math.round(boostCharge*100)+'%';
+    $('airship-boost').setAttribute('aria-label','ブースト（長押し / Shift） 残量 '+Math.round(boostCharge*100)+'%'+(boostLocked?' 充電中':''));
+    $('airship-deck').textContent=local.y>upperDeckY-.15?'2F':'1F';
     $('airship-vs').textContent=(verticalSpeed>=0?'+':'')+verticalSpeed.toFixed(1);
     $('airship-heading').textContent=String((Math.round(heading*180/Math.PI)%360+360)%360).padStart(3,'0')+'°';
     $('airship-status').textContent=impact>1?'GROUND CONTACT / 接触を吸収':contact?'LANDED / 接地':autopilot?'TAKEOFF ASSIST / 離陸中':mode==='walk'?'UNATTENDED / 推力維持':'CRUISING / 飛行中';
@@ -523,16 +627,18 @@ window.createAirship = function (ctx) {
     if(document.activeElement!==$('airship-power'))$('airship-power').value=Math.round(throttle*100);
     $('airship-power-value').textContent=Math.round(throttle*100)+'%';
     const worst=rooms.reduce((a,b)=>a.hp<b.hp?a:b),room=currentRoom();
-    $('airship-damage').textContent=worst.hp<70?worst.name+' 損傷 '+Math.round(worst.hp)+'% · '+(worst.fire>0?'火災発生':'要修理'):rooms.some(r=>r.wet>35)?'雨漏り警報 · 短絡に注意':'船体正常 · 全6室';
+    $('airship-damage').textContent=worst.hp<70?worst.name+' 損傷 '+Math.round(worst.hp)+'% · '+(worst.fire>0?'火災発生':'要修理'):rooms.some(r=>r.wet>35)?'雨漏り警報 · 短絡に注意':'船体正常 · 全8室 / 2階建て';
     $('airship-damage').classList.toggle('danger',worst.hp<70);
     $('airship-repair').textContent=contact&&velocity.length()<1?'長押しで全室整備':'長押しでこの部屋を修理';
     $('airship-repair').disabled=mode==='pilot'&&!contact;
     $('airship-room-health').textContent=room.name+' 耐久 '+Math.round(room.hp)+'% / 浸水 '+Math.round(room.wet)+'%';
     $('airship-biome').textContent=ctx.biomeAt(ship.position.x,ship.position.z).name;
-    const atHelm=local.z< -10.6&&Math.abs(local.x)<1.1;
+    const atHelm=local.y<1&&local.z< -10.6&&Math.abs(local.x)<1.1;
     $('airship-seat').textContent=mode==='pilot'?'船内を歩く':nearDoor()?(nearDoor().open?'扉を閉じる':'扉を開く'):atHelm?'操縦する':'扉に近づく';
     $('airship-seat').disabled=mode==='walk'&&!atHelm&&!nearDoor();
-    $('airship-exit').disabled=mode!=='walk'||Math.hypot(local.x-entry.x,local.z-entry.z)>2.8||!contact||!hatch.open;
+    $('airship-seat').setAttribute('aria-label',$('airship-seat').textContent);
+    $('airship-view').setAttribute('aria-label',$('airship-view').textContent);
+    $('airship-exit').disabled=mode!=='walk'||local.y>1||Math.hypot(local.x-entry.x,local.z-entry.z)>2.8||!contact||!hatch.open;
     $('game-mode-label').textContent=mode==='pilot'?'飛行船を操縦中':'飛行船の船内を探索中';
     $('airship-plan-dot').setAttribute('cx',String(60+local.x*11));$('airship-plan-dot').setAttribute('cy',String(12+(local.z+15)*5.5));
     updateInstruments();
@@ -545,9 +651,9 @@ window.createAirship = function (ctx) {
       <div class="as-navigation"><span id="airship-status"></span><span id="airship-heading">000°</span></div>
       <div class="as-plan"><svg viewBox="0 0 120 194" aria-label="船内見取り図。上から操縦室、ラウンジ、中央通路、寝室、ギャレー、航海室、機関室"><path d="M25 178V25Q60 -1 95 25V178Z"/><path d="M25 40h70M25 89h70M49 89v89M71 89v89M25 128h24M71 128h24"/><text x="60" y="30">操縦室</text><text x="60" y="65">ラウンジ</text><text x="37" y="112">寝室</text><text x="83" y="112">厨房</text><text x="37" y="150">航海</text><text x="83" y="150">機関</text><circle id="airship-plan-dot" cx="60" cy="30" r="4"/></svg><span id="airship-room"></span></div>
       <div id="airship-damage" role="status"></div>
-      <div class="as-actions"><button id="airship-seat"></button><button id="airship-view"></button><button id="airship-more" aria-expanded="false" aria-controls="airship-menu">船内メニュー</button></div>
-      <div class="as-power"><label for="airship-power">推力 <output id="airship-power-value">0%</output></label><input id="airship-power" type="range" min="-25" max="100" step="1" value="0" aria-label="飛行船の推力"><button id="airship-stop">停止</button></div>
-      <div id="airship-menu" hidden><strong id="airship-room-health"></strong><button id="airship-launch">離陸アシスト</button><button id="airship-map">世界地図</button><button id="airship-repair">長押しで修理</button><button id="airship-exit">搭乗口から降船</button><small>雨漏り→短絡・落雷→爆発。着陸中は全室を整備できます。</small></div>
+      <div class="as-actions"><button id="airship-seat" data-icon="↔"></button><button id="airship-view" data-icon="◉"></button><button id="airship-more" data-icon="⋯" aria-label="船内メニュー" aria-expanded="false" aria-controls="airship-menu">船内メニュー</button></div><span id="airship-deck">1F</span>
+      <div class="as-power"><label for="airship-power">推力 <output id="airship-power-value">0%</output></label><input id="airship-power" type="range" min="-25" max="100" step="1" value="0" aria-label="飛行船の推力"><button id="airship-stop" aria-label="推力をゼロにする">停止</button><button id="airship-boost" aria-pressed="false" aria-label="ブースト（長押し / Shift）"><span>BOOST</span><output id="airship-boost-value">100%</output></button></div>
+      <div id="airship-menu" hidden><strong id="airship-room-health"></strong><button id="airship-launch">離陸アシスト</button><button id="airship-map">世界地図</button><button id="airship-repair">長押しで修理</button><button id="airship-exit">搭乗口から降船</button><small>1F後方の階段で2Fの展望サロン・図書室へ。ブーストは長押し / Shift（最大8秒、16秒で全回復）。雨漏り・落雷の損傷は修理で回復。</small></div>
       <div class="as-lift"><button id="airship-up" aria-label="飛行船を上昇">↑<small>上昇</small></button><button id="airship-down" aria-label="飛行船を降下">↓<small>降下</small></button></div>
       <div class="as-help"><span id="airship-help"></span></div>`;
     document.body.append(hud);
@@ -555,17 +661,18 @@ window.createAirship = function (ctx) {
     const gated=fn=>()=>{if(!ctx.getPaused()&&!ctx.getDead())fn();};
     $('airship-launch').addEventListener('click',gated(launch));$('airship-seat').addEventListener('click',gated(interact));
     $('airship-view').addEventListener('click',gated(setView));$('airship-exit').addEventListener('click',gated(exit));
-    $('airship-stop').addEventListener('click',gated(()=>{if(mode!=='pilot'){ctx.notice('推力を変えるには操縦席に戻ってください');return;}throttle=0;autopilot=false;ctx.notice('推力0。慣性で進みながら減速します');}));
+    $('airship-stop').addEventListener('click',gated(()=>{if(mode!=='pilot'){ctx.notice('推力を変えるには操縦席に戻ってください');return;}throttle=0;boostHeld=false;boosting=false;autopilot=false;ctx.notice('推力0。慣性で進みながら減速します');}));
     $('airship-more').addEventListener('click',gated(()=>{const menu=$('airship-menu');menu.hidden=!menu.hidden;$('airship-more').setAttribute('aria-expanded',String(!menu.hidden));repairHeld=false;}));
     $('airship-map').addEventListener('click',gated(()=>ctx.openDialog('map-dialog')));
     $('airship-power').addEventListener('input',e=>{if(mode==='pilot'&&!ctx.getPaused()){throttle=clamp(Number(e.target.value)/100,-.25,1);autopilot=false;}});
     function hold(id,set) {const b=$(id);let pointer=null;b.addEventListener('pointerdown',e=>{if(ctx.getPaused()||b.disabled||pointer!==null)return;e.preventDefault();pointer=e.pointerId;if(e.isTrusted)b.setPointerCapture(e.pointerId);set(true);});for(const ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,e=>{if(e.pointerId===pointer){pointer=null;set(false);}});b.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='Enter'){e.preventDefault();if(!ctx.getPaused())set(true);}});b.addEventListener('keyup',()=>set(false));b.addEventListener('blur',()=>set(false));}
     hold('airship-repair',v=>repairHeld=v);
+    hold('airship-boost',v=>{boostHeld=v;if(!v)boosting=false;});
     hold('airship-up',v=>{if(mode==='walk'){if(v)jump();}else ascentHeld=v;});hold('airship-down',v=>descentHeld=v);
     window.addEventListener('blur',pauseInputs);document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseInputs();});
     window.addEventListener('keydown',e=>{if(e.repeat||ctx.getPaused()||ctx.getDead()||mode==='ground'||e.target.matches('input,select'))return;if(e.code==='KeyV'){e.preventDefault();setView();}});
   }
-  function pauseInputs(){ascentHeld=false;descentHeld=false;repairHeld=false;input={mx:0,mz:0,running:false};}
+  function pauseInputs(){boostHeld=false;boosting=false;ascentHeld=false;descentHeld=false;repairHeld=false;input={mx:0,mz:0,running:false};}
   createUI();place();syncUI();updateInstruments();
   const api={get aboard(){return mode!=='ground';},get piloting(){return mode==='pilot';},get interiorView(){return mode!=='ground'&&!exterior;},board,canBoard,interact,exit,place,jump,pauseInputs,getState,receiveLightning,
     setInput(value){input=value;},
@@ -590,7 +697,7 @@ window.createAirship = function (ctx) {
           options.sort((a,b)=>Math.abs(a[1]-p[a[0]])-Math.abs(b[1]-p[b[0]]));p[options[0][0]]=options[0][1];
         }
         // Gas envelope has an ellipsoid-shaped collider, not a giant box.
-        const cy=clamp(16,p.y+radius,p.y+personHeight-radius)-16;
+        const cy=clamp(16+envelopeLift,p.y+radius,p.y+personHeight-radius)-(16+envelopeLift);
         const rx=10.6+radius,ry=17+radius,rz=39+radius;
         const section=1-(cy/ry)**2,radial=(p.x/rx)**2+(p.z/rz)**2;
         if(section>0&&radial<section){if(radial<.00001)p.x=rx*Math.sqrt(section);else{const scale=Math.sqrt(section/radial);p.x*=scale;p.z*=scale;}}
@@ -607,7 +714,7 @@ window.createAirship = function (ctx) {
     look(yaw=0,pitch=0){state.yaw=heading+yaw;state.pitch=pitch;cameraStep();},
     pose(x,y,z,h=0){ship.position.set(x,y,z);heading=h;ship.rotation.y=h;ship.updateMatrixWorld(true);},
     velocity(x,y,z){velocity.set(x,0,z);verticalSpeed=y;},
-    throttle(v){throttle=clamp(v,-.25,1);},launch,setView,
+    throttle(v){throttle=clamp(v,-.25,1);},boost(v){boostHeld=v;},launch,setView,
     terrainHeight:height,
     minimumGap(){ship.updateMatrixWorld(true);return Math.min(...groundSamples.map(p=>{const w=p.clone().applyMatrix4(ship.matrixWorld);return w.y-height(w.x,w.z);}));},
     intersects(){return activeObstacles().filter(b=>intersects(local,b)).map(b=>b.name);},

@@ -38,8 +38,9 @@
     return mix(mix(hash(ix,iz),hash(ix+1,iz),fx),mix(hash(ix,iz+1),hash(ix+1,iz+1),fx),fz);
   }
   function fbm(x,z) { return noise(x,z)*.57 + noise(x*2.03,z*2.03)*.27 + noise(x*4.07,z*4.07)*.11 + noise(x*8.1,z*8.1)*.05; }
-  // Area, rather than each side, is multiplied by six. Shared by every vehicle.
-  const worldScale=Math.sqrt(6), worldBounds=1430*worldScale, worldSize=3200*worldScale;
+  // Seven times the previous area (6 × 7 relative to the original world).
+  // Keep the terrain draw budget bounded; all vehicles/maps share these limits.
+  const worldAreaRatio=6*7, worldScale=Math.sqrt(worldAreaRatio), worldBounds=1430*worldScale, worldSize=3200*worldScale;
   const regions=[
     ['forest','翠影の大森林','#476d4b','巨木の聖域'],
     ['autumn','琥珀の丘','#ba7844','紅葉の宿場'],
@@ -49,7 +50,7 @@
     ['canyon','赤岩の峡谷','#b76e50','赤岩の石門'],
     ['snow','白銀の山脈','#d9e5e6','雪嶺の観測所'],
     ['volcano','黒曜の火山帯','#575260','黒曜の火口']
-  ].map(([id,name,color,place],i)=>({id,name,color,place,x:Math.cos(i*Math.PI/4)*2450,z:Math.sin(i*Math.PI/4)*2450}));
+  ].map(([id,name,color,place],i)=>({id,name,color,place,x:Math.cos(i*Math.PI/4)*2450*Math.sqrt(7),z:Math.sin(i*Math.PI/4)*2450*Math.sqrt(7)}));
   const meadow={id:'meadow',name:'風渡りの平原',color:'#8caa65'};
   function biomeAt(x,z){
     if(Math.hypot(x,z)<1050)return meadow;
@@ -551,6 +552,6 @@
   animate();
   if(testing&&new URLSearchParams(location.search).get('review')==='boss')expansion.test.prepareBoss();
   // Diagnostics; state-mutating verification hooks exist only in selftest mode.
-  window.verdantWorld={expansion,world:{size:worldSize,bounds:worldBounds,areaRatio:6,regions:regions.map(({tint,...r})=>r),biomeAt,height},getState:()=>({position:{x:state.x,y:state.y,z:state.z},jump:state.jump,onGround:state.onGround,yaw:state.yaw,running:state.running,discovered:[...discovered],paused,grass:grassCount,graphics:{preset:Number($('quality-select').value),width:renderSize.x,height:renderSize.y,pixelRatio:renderer.getPixelRatio(),shadowSize:sun.shadow.mapSize.x,activeGrass:grass.count,grassTarget,grassPending,terrainTriangles:groundGeo.index.count/3,autoScale,frameAverageMs:frameAverage*1000,shadowEveryFrame:renderer.shadowMap.autoUpdate},scenery:expansion.getSceneryStats(),webgl:renderer.capabilities.isWebGL2?'WebGL2':'WebGL1',drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
+  window.verdantWorld={expansion,world:{size:worldSize,bounds:worldBounds,areaRatio:worldAreaRatio,previousAreaMultiplier:7,regions:regions.map(({tint,...r})=>r),biomeAt,height},getState:()=>({position:{x:state.x,y:state.y,z:state.z},jump:state.jump,onGround:state.onGround,yaw:state.yaw,running:state.running,discovered:[...discovered],paused,grass:grassCount,graphics:{preset:Number($('quality-select').value),width:renderSize.x,height:renderSize.y,pixelRatio:renderer.getPixelRatio(),shadowSize:sun.shadow.mapSize.x,activeGrass:grass.count,grassTarget,grassPending,terrainTriangles:groundGeo.index.count/3,autoScale,frameAverageMs:frameAverage*1000,shadowEveryFrame:renderer.shadowMap.autoUpdate},scenery:expansion.getSceneryStats(),webgl:renderer.capabilities.isWebGL2?'WebGL2':'WebGL1',drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
   if(testing)window.verdantWorld.test={sampleFrame,resetFrameWindow,setObjectView,mapLabels:()=>lastMapLabels.map(r=>({...r})),flushGrass:()=>updateGrass(grassCount),renderReview(){reviewCamera();sky.position.copy(camera.position);renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');}};
 })();
