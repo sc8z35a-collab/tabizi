@@ -36,7 +36,19 @@ window.createWildfront = function (ctx) {
   const wet={value:0}, cloud={value:0};
   let store={};try{store=JSON.parse(localStorage.getItem('verdant-wildfront-v2')||'{}')||{};}catch(e){}
   if(!testing){kills=Number.isFinite(store.kills)?Math.max(0,store.kills):0;bossWins=Number.isFinite(store.bossWins)?Math.max(0,store.bossWins):0;}
-  const weather={type:'clear',target:0,intensity:0,age:0,auto:true,flash:0,lightningAt:8};
+  const weather={type:'clear',target:0,intensity:0,age:0,auto:true,flash:0,lightningAt:8,endsAt:0,remaining:0,windX:0,windZ:0,gust:0};
+  const delugeKey='verdant-deluge-until-v1', delugeDuration=60*60*1000;
+  let wallClock=Date.now(), monotonicClock=performance.now();
+  function realNow(){
+    const now=performance.now();wallClock=Math.max(Date.now(),wallClock+Math.max(0,now-monotonicClock));monotonicClock=now;return wallClock;
+  }
+  function saveDeluge(){if(!testing)try{if(weather.endsAt)localStorage.setItem(delugeKey,String(weather.endsAt));else localStorage.removeItem(delugeKey);}catch(e){}}
+  function syncWeatherClock(){
+    if(weather.type!=='deluge')return;
+    weather.remaining=Math.max(0,weather.endsAt-realNow());
+    if(!weather.remaining){weather.endsAt=0;saveDeluge();setWeather('rain');notice('超土砂降りが通過しました。窓と船体は徐々に乾きます',6);}
+    const timer=$('deluge-countdown');if(timer)timer.textContent=weather.remaining?'超土砂降り 残り '+Math.ceil(weather.remaining/60000)+' 分（実時間）':'';
+  }
   function persist(){if(testing)return;try{localStorage.setItem('verdant-wildfront-v2',JSON.stringify({kills,bossWins}));}catch(e){}}
   window.addEventListener('pagehide',persist);
   function notice(message,duration=3.4){$('action-notice').textContent=message;noticeTimer=duration;$('action-notice').classList.add('visible');}
@@ -733,16 +745,48 @@ window.createWildfront = function (ctx) {
   const rainCount=3500,rainPositions=new Float32Array(rainCount*6),rainSeeds=new Float32Array(rainCount*3);for(let i=0;i<rainCount;i++){rainSeeds[i*3]=(random()-.5)*110;rainSeeds[i*3+1]=random()*55;rainSeeds[i*3+2]=(random()-.5)*110;}
   const rainGeo=new T.BufferGeometry();rainGeo.setAttribute('position',new T.BufferAttribute(rainPositions,3).setUsage(T.DynamicDrawUsage));const rain=new T.LineSegments(rainGeo,new T.LineBasicMaterial({color:'#c2d7df',transparent:true,opacity:0,depthWrite:false}));rain.frustumCulled=false;rain.visible=false;scene.add(rain);
   const lightningLight=new T.DirectionalLight('#d9e8ff',0);lightningLight.position.set(20,120,-40);scene.add(lightningLight);
-  function setWeather(type){if(!['clear','rain','storm','fog'].includes(type))return false;weather.type=type;weather.target=type==='clear'?0:type==='storm'?1:type==='rain'?.6:.78;weather.age=0;weather.lightningAt=5+Math.random()*7;$('weather-status').textContent={clear:'CLEAR SKIES',rain:'PASSING RAIN',storm:'THUNDERSTORM',fog:'MISTY HIGHLANDS'}[type];$('weather-description').textContent={clear:'晴れ、穏やかな風',rain:'雨、濡れた草の匂い',storm:'雷雨、強い風に注意',fog:'濃霧、視界不良'}[type];document.querySelectorAll('[data-weather]').forEach(b=>b.classList.toggle('selected',b.dataset.weather===type));notice({clear:'雲の切れ間から光が差し込む',rain:'天候イベント — 草原に雨が降り始めた',storm:'天候イベント — 雷雲が近づいている',fog:'天候イベント — 深い霧が草原を包む'}[type]);return true;}
-  function weatherStep(dt){weather.age+=dt;weather.intensity=lerp(weather.intensity,weather.target,1-Math.exp(-dt*.25));wet.value=lerp(wet.value,weather.type==='rain'||weather.type==='storm'?weather.intensity:0,1-Math.exp(-dt*.22));cloud.value=weather.intensity;if(skyUniforms.uStorm)skyUniforms.uStorm.value=cloud.value;
-    const time=Number($('time-slider').value);sun.intensity=(3.35-time*.8)*(1-weather.intensity*.79);hemi.intensity=(2.35-time*.65)*(1-weather.intensity*.42);scene.fog.density=lerp(scene.fog.density,weather.type==='fog'?.009:weather.type==='storm'?.0028:weather.type==='rain'?.0016:.00065,1-Math.exp(-dt*.3));scene.fog.color.lerp(new T.Color(weather.type==='storm'?'#72868b':weather.type==='fog'?'#adb9b2':'#b2c6b5'),1-Math.exp(-dt*.22));
-    rain.visible=(weather.type==='rain'||weather.type==='storm')&&weather.intensity>.02;rain.material.opacity=weather.intensity*.30;
-    if(airship?.interiorView)rain.visible=false;
-    if(rain.visible){const wind=weather.type==='storm'?7:2;for(let i=0;i<(performanceMode?1200:rainCount);i++){const x=rainSeeds[i*3]+state.x+Math.sin(elapsed*.4+i)*1.3,y=((rainSeeds[i*3+1]-elapsed*28)%55+55)%55+state.y-7,z=rainSeeds[i*3+2]+state.z;const j=i*6;rainPositions[j]=x;rainPositions[j+1]=y;rainPositions[j+2]=z;rainPositions[j+3]=x-wind*.13;rainPositions[j+4]=y+1.65;rainPositions[j+5]=z+.20;}rainGeo.attributes.position.needsUpdate=true;}
-    weather.flash=Math.max(0,weather.flash-dt*3.5);if(weather.type==='storm'&&weather.age>weather.lightningAt){weather.flash=.8;weather.lightningAt=weather.age+8+Math.random()*13;const bolt=[];const hit=airship&&Math.random()<.65?airship.receiveLightning():null;const x=hit?hit.x:state.x+(Math.random()-.5)*180,z=hit?hit.z:state.z-100-Math.random()*150,y=hit?hit.y:height(x,z);for(let i=0;i<9;i++)bolt.push(new T.Vector3(x+(i===8?0:(Math.random()-.5)*12),y+160-i*20,z));const geo=new T.BufferGeometry().setFromPoints(bolt),mat=new T.LineBasicMaterial({color:'#e7eeff',transparent:true});const line=new T.Line(geo,mat);scene.add(line);effects.push({m:line,life:.24,total:.24,v:new T.Vector3(),ring:true});}
-    lightningLight.intensity=$('motion-toggle').checked?0:weather.flash*5;$('lightning-overlay').style.opacity=weather.flash*.17;
-    if(weather.auto&&weather.age>110&&!(boss&&!boss.dead)){const cycle=['clear','rain','storm','fog'];setWeather(cycle[(cycle.indexOf(weather.type)+1)%4]);}
+  function setWeather(type,restoreUntil=0){
+    if(!['clear','rain','storm','fog','deluge'].includes(type))return false;
+    const now=realNow();
+    if(weather.type==='deluge'&&weather.endsAt>now){notice('超土砂降りはあと '+Math.ceil((weather.endsAt-now)/60000)+' 分続きます（実時間）',5);return false;}
+    weather.type=type;weather.target=type==='clear'?0:type==='storm'||type==='deluge'?1:type==='rain'?.6:.78;
+    weather.age=0;weather.lightningAt=5+Math.random()*7;
+    weather.endsAt=type==='deluge'?(restoreUntil||now+delugeDuration):0;weather.remaining=Math.max(0,weather.endsAt-now);saveDeluge();
+    $('weather-status').textContent={clear:'CLEAR SKIES',rain:'PASSING RAIN',storm:'THUNDERSTORM',fog:'MISTY HIGHLANDS',deluge:'EXTREME DELUGE / 60 MIN'}[type];
+    $('weather-description').textContent={clear:'晴れ、穏やかな風',rain:'雨、濡れた草の匂い',storm:'雷雨、強い風に注意',fog:'濃霧、視界不良',deluge:'超土砂降り、暴風・視界喪失'}[type];
+    document.querySelectorAll('[data-weather]').forEach(b=>b.classList.toggle('selected',b.dataset.weather===type));
+    notice({clear:'雲の切れ間から光が差し込む',rain:'天候イベント — 草原に雨が降り始めた',storm:'天候イベント — 雷雲が近づいている',fog:'天候イベント — 深い霧が草原を包む',deluge:'超土砂降り — 実時間で1時間。暴風・窓の白濁・浸水。自動操縦でも針路を維持しきれません'}[type],7);return true;
   }
+  function weatherStep(dt){
+    syncWeatherClock();weather.age+=dt;
+    const extreme=weather.type==='deluge',storm=extreme||weather.type==='storm',raining=storm||weather.type==='rain';
+    weather.intensity=lerp(weather.intensity,weather.target,1-Math.exp(-dt*.25));
+    wet.value=lerp(wet.value,raining?weather.intensity:0,1-Math.exp(-dt*.22));cloud.value=weather.intensity;
+    if(skyUniforms.uStorm)skyUniforms.uStorm.value=cloud.value;
+    const gust=.55+.22*Math.sin(elapsed*.73)+.15*Math.sin(elapsed*1.91)+.08*Math.sin(elapsed*3.17);
+    const strength=(extreme?64:storm?18:raining?6:1.8)*weather.intensity;
+    const direction=.65+Math.sin(elapsed*.047)*(extreme?1.8:.35);
+    weather.windX=Math.cos(direction)*strength*gust;weather.windZ=Math.sin(direction)*strength*gust;weather.gust=gust;
+    const time=Number($('time-slider').value);sun.intensity=(3.35-time*.8)*(1-weather.intensity*(extreme?.96:.79));hemi.intensity=(2.35-time*.65)*(1-weather.intensity*(extreme?.68:.42));
+    scene.fog.density=lerp(scene.fog.density,extreme?.075:weather.type==='fog'?.009:storm?.0028:raining?.0016:.00065,1-Math.exp(-dt*.3));
+    scene.fog.color.lerp(new T.Color(extreme?'#65747b':storm?'#72868b':weather.type==='fog'?'#adb9b2':'#b2c6b5'),1-Math.exp(-dt*.22));
+    rain.visible=raining&&weather.intensity>.02;rain.material.opacity=weather.intensity*(extreme?.8:.30);
+    if(rain.visible){
+      const count=performanceMode?1200:rainCount;rainGeo.setDrawRange(0,count*2);
+      for(let i=0;i<count;i++){
+        const x=rainSeeds[i*3]+state.x+Math.sin(elapsed*.4+i)*1.3,y=((rainSeeds[i*3+1]-elapsed*(extreme?55:28))%55+55)%55+state.y-7,z=rainSeeds[i*3+2]+state.z;
+        const j=i*6,inside=airship?.sheltersRain(x,y,z);
+        rainPositions[j]=x;rainPositions[j+1]=y;rainPositions[j+2]=z;
+        rainPositions[j+3]=inside?x:x-weather.windX*.13;rainPositions[j+4]=inside?y:y+(extreme?3.8:1.65);rainPositions[j+5]=inside?z:z-weather.windZ*.13;
+      }rainGeo.attributes.position.needsUpdate=true;
+    }
+    weather.flash=Math.max(0,weather.flash-dt*3.5);
+    if(storm&&weather.age>weather.lightningAt){weather.flash=.8;weather.lightningAt=weather.age+(extreme?5:8)+Math.random()*13;const bolt=[];const hit=airship&&Math.random()<.65?airship.receiveLightning():null;const x=hit?hit.x:state.x+(Math.random()-.5)*180,z=hit?hit.z:state.z-100-Math.random()*150,y=hit?hit.y:height(x,z);for(let i=0;i<9;i++)bolt.push(new T.Vector3(x+(i===8?0:(Math.random()-.5)*12),y+160-i*20,z));const geo=new T.BufferGeometry().setFromPoints(bolt),mat=new T.LineBasicMaterial({color:'#e7eeff',transparent:true});const line=new T.Line(geo,mat);scene.add(line);effects.push({m:line,life:.24,total:.24,v:new T.Vector3(),ring:true});}
+    lightningLight.intensity=$('motion-toggle').checked?0:weather.flash*5;$('lightning-overlay').style.opacity=$('motion-toggle').checked?0:weather.flash*.17;
+    if(weather.auto&&!extreme&&weather.age>110&&!(boss&&!boss.dead)){const cycle=['clear','rain','storm','deluge','fog'];setWeather(cycle[(cycle.indexOf(weather.type)+1)%cycle.length]);}
+  }
+  if(!testing)try{const until=Number(localStorage.getItem(delugeKey));if(Number.isFinite(until)&&until>realNow()&&until<=realNow()+delugeDuration)setWeather('deluge',until);}catch(e){}
+  document.addEventListener('visibilitychange',syncWeatherClock);
   document.querySelectorAll('[data-weather]').forEach(b=>b.classList.toggle('selected',b.dataset.weather===weather.type));
   function eventsUI(){if(dead)return;openDialog('events-dialog');}
   $('events-button').addEventListener('click',eventsUI);$('event-shortcut').addEventListener('click',eventsUI);$('auto-weather').addEventListener('change',e=>weather.auto=e.target.checked);
@@ -780,7 +824,7 @@ window.createWildfront = function (ctx) {
     if(boss&&!boss.dead){$('boss-fill').style.width=(boss.hp/boss.maxHP*100)+'%';$('boss-phase').textContent=boss.phase===2?'PHASE II · 激昂':'PHASE I';}
   }
   let stoneEventFired=false;
-  function update(dt,paused){const sim=paused||dead?0:dt;elapsed+=sim;attackCD=Math.max(0,attackCD-sim);dodgeCD=Math.max(0,dodgeCD-sim);healCD=Math.max(0,healCD-sim);invincible=Math.max(0,invincible-sim);combatTimer=Math.max(0,combatTimer-sim);hurtTimer=Math.max(0,hurtTimer-dt);$('damage-overlay').style.opacity=hurtTimer>0?.8:0;
+  function update(dt,paused){syncWeatherClock();const sim=paused||dead?0:dt;elapsed+=sim;attackCD=Math.max(0,attackCD-sim);dodgeCD=Math.max(0,dodgeCD-sim);healCD=Math.max(0,healCD-sim);invincible=Math.max(0,invincible-sim);combatTimer=Math.max(0,combatTimer-sim);hurtTimer=Math.max(0,hurtTimer-dt);$('damage-overlay').style.opacity=hurtTimer>0?.8:0;
     noticeTimer=Math.max(0,noticeTimer-dt);if(noticeTimer<=0)$('action-notice').classList.remove('visible');
     if(dodgeTime>0&&sim>0&&!airship?.aboard){dodgeTime-=sim;const nx=clamp(state.x+dodgeX*27*sim,-(worldBounds),worldBounds),nz=clamp(state.z+dodgeZ*27*sim,-(worldBounds),worldBounds);if(lakeDistance(nx,nz)>100){state.x=nx;state.z=nz;state.y=height(nx,nz);player.position.set(nx,state.y+state.jump,nz);}player.rotation.z=Math.sin((.26-dodgeTime)/.26*Math.PI)*.5;}else if(!dead)player.rotation.z=0;
     sword.rotation.x=attackCD>.1?-1.4+Math.sin(attackCD*14)*.8:0;sword.rotation.z=attackCD>.1?-.9:-.27;
@@ -797,7 +841,7 @@ window.createWildfront = function (ctx) {
     for(const site of scenery.sites){const x=mx(site.x),z=mz(site.z);c.fillStyle=site.type==='ruins'?'#b3c8c1':'#d8be8c';c.fillRect(x-2,z-2,4,4);if(large&&drawLabel)drawLabel(site.name,x,z);}
     c.restore();
     for(const v of entities){c.fillStyle=v.type==='car'?'#e8d8a6':'#b6dbe4';c.font=large?'20px serif':'12px serif';c.textAlign='center';c.fillText(v.type==='car'?'▣':'✦',mx(v.g.position.x),mz(v.g.position.z));}for(const e of enemies){if(e.dead)continue;c.beginPath();c.fillStyle=e.type==='boss'?'#ffbd76':e.type==='creatures'?'#e79576':'#bbcd74';c.arc(mx(e.x),mz(e.z),e.type==='boss'?5:large?3:2,0,Math.PI*2);c.fill();}}
-  const api={setPerformanceMode,setSceneryDensity:scenery.setDensity,getSceneryStats:scenery.stats,getObjectViews:()=>scenery.views.map(v=>({...v,eye:[...v.eye],target:[...v.target]})),sceneryClearance:scenery.clearance,get airship(){return airship;},get mounted(){return mounted;},get dead(){return dead;},get windSpeed(){return weather.type==='storm'?1.85:1;},pauseInputs(){ascendHeld=descendHeld=false;cancelAttack();moveX=moveZ=0;airship?.pauseInputs();},prepareMove,sense,drive,update,interact,attack,dodge,heal,drawMap,respawn,setWeather,startBoss,spawnGroup,placeVehicle,getState:()=>({stamina,combo,chargeTime,focusTime,empowered,perfectDodges,senseTime,senseCD,pickups:pickups.length,collected,dodgeCD,attackCD,hp,potions,kills,bossWins,dead,mode:mounted?mounted.type:'foot',vehicleSpeed:mounted?mounted.speed:0,altitude:mounted?mounted.lift:0,weather:weather.type,weatherIntensity:weather.intensity,projectiles:projectiles.length,enemies:enemies.filter(e=>!e.dead).map(e=>({type:e.type,hp:e.hp,x:e.x,z:e.z,aggro:e.aggro,windup:e.windup})),boss:boss?{hp:boss.hp,phase:boss.phase,dead:boss.dead}:null,car:{x:car.g.position.x,z:car.g.position.z},plane:{x:plane.g.position.x,z:plane.g.position.z}})};
+  const api={setPerformanceMode,setSceneryDensity:scenery.setDensity,getSceneryStats:scenery.stats,getObjectViews:()=>scenery.views.map(v=>({...v,eye:[...v.eye],target:[...v.target]})),sceneryClearance:scenery.clearance,get airship(){return airship;},get mounted(){return mounted;},get dead(){return dead;},get windSpeed(){return weather.type==='deluge'?3.6:weather.type==='storm'?1.85:1;},pauseInputs(){ascendHeld=descendHeld=false;cancelAttack();moveX=moveZ=0;airship?.pauseInputs();},prepareMove,sense,drive,update,interact,attack,dodge,heal,drawMap,respawn,setWeather,startBoss,spawnGroup,placeVehicle,getState:()=>({stamina,combo,chargeTime,focusTime,empowered,perfectDodges,senseTime,senseCD,pickups:pickups.length,collected,dodgeCD,attackCD,hp,potions,kills,bossWins,dead,mode:mounted?mounted.type:'foot',vehicleSpeed:mounted?mounted.speed:0,altitude:mounted?mounted.lift:0,weather:weather.type,weatherIntensity:weather.intensity,weatherEndsAt:weather.endsAt,weatherRemaining:weather.remaining,projectiles:projectiles.length,enemies:enemies.filter(e=>!e.dead).map(e=>({type:e.type,hp:e.hp,x:e.x,z:e.z,aggro:e.aggro,windup:e.windup})),boss:boss?{hp:boss.hp,phase:boss.phase,dead:boss.dead}:null,car:{x:car.g.position.x,z:car.g.position.z},plane:{x:plane.g.position.x,z:plane.g.position.z}})};
   // Test-only deterministic hooks exercise the same production simulation functions.
   if(testing)api.test={beginAttack,releaseAttack,cancelAttack,setStamina(v){stamina=clamp(v,0,100);},setWindup(seconds){const e=targetEnemy();if(e){e.windup=seconds;e.strikeX=state.x;e.strikeZ=state.z;}},teleport(x,z){state.x=x;state.z=z;state.y=height(x,z);player.position.set(x,state.y,z);},step(seconds){for(let t=0;t<seconds;t+=.025)update(.025,false);},drive(seconds,input){for(let t=0;t<seconds;t+=.025)drive(.025,input);},holdAscend(v){ascendHeld=v;},holdDescend(v){descendHeld=v;},hurt(amount){invincible=0;return hurtPlayer(amount);},receiveDamage(amount){return hurtPlayer(amount);},hitNearest(amount){const e=enemies.filter(e=>!e.dead).sort((a,b)=>Math.hypot(a.x-state.x,a.z-state.z)-Math.hypot(b.x-state.x,b.z-state.z))[0];if(e)hitEnemy(e,amount);},reset(){respawn();},clearEnemies(){enemies.forEach(e=>{e.dead=true;e.deathAge=11;});enemyStep(.025);boss=null;$('boss-hud').hidden=true;}};
   if(testing)api.test.prepareBoss=function(){
@@ -806,7 +850,7 @@ window.createWildfront = function (ctx) {
     weatherStep(8);weather.flash=0;lightningLight.intensity=0;$('lightning-overlay').style.opacity=0;combatTimer=10;noticeTimer=0;$('action-notice').classList.remove('visible');
     camera.position.set(state.x,state.y+3.5,state.z+10.5);camera.lookAt(state.x,state.y+1.7,state.z);hud(.2);document.body.dataset.review='boss';
   };
-  console.info('Wildfront ready: drivable car, flyable plane, goblins, Creatures squad, boss and 4 weather states.');
-  airship=window.createAirship({...ctx,notice,getWeather:()=>weather,getDead:()=>dead,getMounted:()=>mounted,onBoard(){dodgeTime=0;cancelAttack();}});
+  console.info('Wildfront ready: drivable car, flyable plane, goblins, Creatures squad, boss and 5 weather states.');
+  airship=window.createAirship({...ctx,notice,setWeather,getWeather:()=>weather,getDead:()=>dead,getMounted:()=>mounted,onBoard(){dodgeTime=0;cancelAttack();}});
   return api;
 };
