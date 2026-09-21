@@ -5,7 +5,7 @@ window.createWildfront = function (ctx) {
   const {T,scene,camera,renderer,state,player,height,lakeDistance,keys,ground,rocks,trunks,crowns,stoneMat,brickMats,sun,hemi,skyUniforms,testing,openDialog,discovered} = ctx;
   const $ = id => document.getElementById(id);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), lerp=(a,b,t)=>a+(b-a)*t;
-  const home={x:state.x,z:state.z};
+  const home={x:state.x,z:state.z}, worldBounds=ctx.worldBounds;
   let elapsed=0, mounted=null, dead=false, hp=100, potions=3, kills=0, bossWins=0, attackCD=0, dodgeCD=0, invincible=0, healCD=0, combatTimer=0, noticeTimer=0, hurtTimer=0, dodgeTime=0;
   let boss=null, nextRaid=105, activeEncounter=null;
   let airship=null;
@@ -75,6 +75,10 @@ window.createWildfront = function (ctx) {
       shader.fragmentShader='varying vec3 wfPos;uniform float wfWet;\n'+shaderNoise+'\n'+shader.fragmentShader;
       const terrain=kind==='terrain';shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
       float wfPatch=wfNoise(wfPos.xz*.043);float fine=wfNoise(wfPos.xz*1.7);
+      ${terrain?`float outerBiome=smoothstep(800.,1500.,length(wfPos.xz));
+      #ifdef USE_COLOR
+      diffuseColor.rgb=mix(diffuseColor.rgb,vColor,outerBiome*.92);
+      #endif`:''}
       diffuseColor.rgb *= mix(.82,1.2,wfPatch)*mix(.9,1.08,fine);
       ${terrain?`float trail=1.-smoothstep(1.3,4.0,abs(wfPos.x-(14.*sin(wfPos.z*.019)-4.)));trail*=1.-smoothstep(180.,230.,abs(wfPos.z+50.));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.27,.22,.12)*(.8+fine*.4),trail*.7);float slope=1.-abs(normalize(cross(dFdx(wfPos),dFdy(wfPos))).y);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.24,.26,.21),smoothstep(.18,.48,slope)*.75);`:`float moss=wfNoise(wfPos.xz*.8+wfPos.y*.3);diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.59,.77,.36),smoothstep(.59,.78,moss)*.7);`}
       diffuseColor.rgb*=1.-wfWet*.19;`);
@@ -155,6 +159,44 @@ window.createWildfront = function (ctx) {
         return {x,z,y:height(x,z)};
       }
       return null;
+    }
+    // Regional objects are chunk-batched and distance culled like the original scenery.
+    // The enlarged world does not multiply the per-frame grass or draw-call budget.
+    for(const region of ctx.regions){
+      for(let i=0;i<420;i++){
+        const x=region.x+(rng()-.5)*2200,z=region.z+(rng()-.5)*2200;
+        if(Math.abs(x)>worldBounds-100||Math.abs(z)>worldBounds-100||ctx.biomeAt(x,z).id!==region.id||Math.hypot(x,z)<1300)continue;
+        const y=height(x,z),s=4+rng()*10;
+        if(['forest','autumn','snow'].includes(region.id)){
+          add('trunk',x,y+s*.45,z,.45,s*.9,.45);
+          if(region.id==='snow')for(let j=0;j<3;j++)add('pine',x,y+s*(.65+j*.22),z,s*(.32-j*.07),s*.55,s*(.32-j*.07),0,0,0,j===2?'#eef5f0':'#769486');
+          else for(let j=0;j<3;j++)add('shrub',x+Math.sin(j*2)*s*.2,y+s*(.9+j*.15),z+Math.cos(j*2)*s*.2,s*.45,s*.42,s*.45,0,rng()*6,0,region.id==='forest'?'#497b55':['#d78a39','#b95531','#dbc459'][i%3]);
+        }else if(region.id==='desert'){
+          add('trunk',x,y+s*.25,z,.45,s*.5,.45,0,0,0,'#6d9253');
+          add('trunk',x+1,y+s*.28,z,.32,s*.23,.32,0,0,.5,'#6d9253');
+          add('stone',x+4,y+1,z,s*.5,2,s*.4,0,rng()*6,0,'#d6b181');
+        }else if(region.id==='wetland'){
+          for(let j=0;j<5;j++)add('stem',x+j*.6,y+1.8,z+j*.3,.09,3.6,.09,0,0,.12,'#899961');
+          if(i%3===0)add('trunk',x,y+3,z,.3,6,.3,0,0,.24,'#9a9b8c');
+        }else{
+          const color=region.id==='canyon'?'#b4704f':region.id==='volcano'?'#4c4651':'#e0cfab';
+          add('stone',x,y+s*.4,z,s*.65,s*(region.id==='canyon'?2:.8),s*.5,0,rng()*6,0,color);
+          if(region.id==='volcano'&&i%8===0)add('lamp',x,y+.4,z,3,.35,1,0,rng()*6,0,'#ff572b');
+        }
+        record(region.id);
+      }
+      const {x,z}=region,y=height(x,z);
+      sites.push({name:region.place,x,z});
+      if(region.id==='coast'||region.id==='snow'){
+        for(let j=0;j<5;j++)add('wall',x,y+j*4+2,z,7-j*.6,4,7-j*.6,0,0,0,region.id==='snow'?'#c9d7dc':'#ded3b5');
+        add('roof',x,y+21,z,6,1,6);add('lamp',x,y+20,z,3,2,3);
+      }else if(region.id==='wetland'){
+        for(let j=0;j<12;j++){add('timber',x,y+1,z+j*2,5,.3,1.9);for(const side of [-1,1])add('trunk',x+side*2,y+.5,z+j*2,.15,3,.15);}
+      }else{
+        for(const side of [-1,1])add('stone',x+side*7,y+6,z,3,12,3,0,0,0,region.color);
+        add('stone',x,y+12,z,17,2,4,0,0,0,region.color);
+        if(region.id==='autumn'||region.id==='desert'){add('wall',x+17,y+2,z,8,4,7);add('roof',x+17,y+4.5,z,10,1,9,0,0,.12);}
+      }
     }
     for(let i=0;i<520;i++) {
       const p=plantPoint(i,520); if(!p)continue; const {x,y,z}=p, h=7+rng()*14;
@@ -529,22 +571,22 @@ window.createWildfront = function (ctx) {
   const plane={type:'plane',name:'KESTREL S-2',g:makePlane(),heading:-.20,speed:0,lift:0};
   for(const v of [car,plane]){scene.add(v.g);v.label=label(v.name,v.type,v.g,v.type==='car'?3.5:3.2);entities.push(v);}
   function terrainPose(v){const x=v.g.position.x,z=v.g.position.z,f=2.0,s=Math.sin(v.heading),c=Math.cos(v.heading);const front=height(x-s*f,z-c*f),back=height(x+s*f,z+c*f);const left=height(x-c,z+s),right=height(x+c,z-s);v.g.rotation.set(Math.atan2(front-back,4)*.65,v.heading,-Math.atan2(right-left,2)*.55,'YXZ');v.g.position.y=height(x,z);}
-  function placeVehicle(v,initial=false){if(mounted===v){notice('停車して降りてから再配置してください');return false;}v.speed=0;v.lift=0;v.heading=state.yaw+(v.type==='car'?.28:-.25);const side=v.type==='car'?-1:1,space=v.type==='car'?7:15;let x=state.x+Math.cos(state.yaw)*space*side-Math.sin(state.yaw)*8,z=state.z-Math.sin(state.yaw)*space*side-Math.cos(state.yaw)*8;if(lakeDistance(x,z)<115){x=home.x+space*side;z=home.z-8;}x=clamp(x,-1390,1390);z=clamp(z,-1390,1390);v.g.position.set(x,height(x,z),z);terrainPose(v);if(!initial)notice(v.name+' を近くに配置しました');return true;}
+  function placeVehicle(v,initial=false){if(mounted===v){notice('停車して降りてから再配置してください');return false;}v.speed=0;v.lift=0;v.heading=state.yaw+(v.type==='car'?.28:-.25);const side=v.type==='car'?-1:1,space=v.type==='car'?7:15;let x=state.x+Math.cos(state.yaw)*space*side-Math.sin(state.yaw)*8,z=state.z-Math.sin(state.yaw)*space*side-Math.cos(state.yaw)*8;if(lakeDistance(x,z)<115){x=home.x+space*side;z=home.z-8;}x=clamp(x,-(worldBounds-40),worldBounds-40);z=clamp(z,-(worldBounds-40),worldBounds-40);v.g.position.set(x,height(x,z),z);terrainPose(v);if(!initial)notice(v.name+' を近くに配置しました');return true;}
   placeVehicle(car,true);placeVehicle(plane,true);
   // Dock stones and expedition crates visually anchor the starting area.
   const camp=new T.Group();camp.position.set(home.x-14,height(home.x-14,home.z-1),home.z-1);scene.add(camp);const crateMat=M('#807450',.1,.8);for(let i=0;i<4;i++){const c=bevel(camp,crateMat,(i%2)*1.3,Math.floor(i/2)*.65+.32,0,1.1,.61,.81,.06);box(camp,darkMetal,(i%2)*1.3,Math.floor(i/2)*.65+.64,0,.07,.03,.85);}rod(camp,steel,[-2,0,0],[-2,4.2,0],.055);const flag=mesh(new T.PlaneGeometry(1.55,.88,5,4),new T.MeshStandardMaterial({map:textTexture('WILDFRONT','#e5dcc0','#47604f'),side:T.DoubleSide}),camp,-1.24,3.6,0);const flagBase=flag.geometry.attributes.position.array.slice();
 
   function setMounted(v){mounted=v;player.visible=!v;state.jump=0;state.vy=0;state.onGround=true;$('vehicle-dashboard').hidden=!v;document.body.classList.toggle('mounted',!!v);$('interact-label').textContent=v?'降りる':'乗る';$('jump-label').textContent=v&&v.type==='plane'?'上昇':'ジャンプ';$('descend-button').hidden=!v||v.type!=='plane';$('dodge-button').disabled=!!v;$('run-button').querySelector('span').textContent=v?'ブースト':'走る';if(v){state.x=v.g.position.x;state.z=v.g.position.z;state.y=v.g.position.y;state.yaw=v.heading;state.pitch=.15;$('vehicle-name').textContent=v.name;notice(v.type==='plane'?'上で加速 → 上昇を押して離陸。降下で着陸':'上下でアクセル・後退 / 左右でハンドル');}else notice('乗り物から降りました');}
-  function interact(){if(dead||ctx.getPaused())return false;if(airship&&(airship.aboard||(!mounted&&airship.canBoard())))return airship.interact();if(mounted){if(Math.abs(mounted.speed)>3){notice('速度を落とし、停車してから降りてください');return false;}if(mounted.type==='plane'&&mounted.lift>1.2){notice('着陸してから降りてください');return false;}const v=mounted;state.x=clamp(v.g.position.x+Math.cos(v.heading)*3,-1430,1430);state.z=clamp(v.g.position.z-Math.sin(v.heading)*3,-1430,1430);state.y=height(state.x,state.z);player.position.set(state.x,state.y,state.z);v.speed=0;setMounted(null);return true;}const near=[car,plane].filter(v=>Math.hypot(v.g.position.x-state.x,v.g.position.z-state.z)<(v.type==='plane'?8:5)).sort((a,b)=>a.g.position.distanceTo(player.position)-b.g.position.distanceTo(player.position))[0];if(!near){notice('車・飛行機に近づいて「乗る」。雷アイコンで呼び出せます');return false;}setMounted(near);return true;}
+  function interact(){if(dead||ctx.getPaused())return false;if(airship&&(airship.aboard||(!mounted&&airship.canBoard())))return airship.interact();if(mounted){if(Math.abs(mounted.speed)>3){notice('速度を落とし、停車してから降りてください');return false;}if(mounted.type==='plane'&&mounted.lift>1.2){notice('着陸してから降りてください');return false;}const v=mounted;state.x=clamp(v.g.position.x+Math.cos(v.heading)*3,-(worldBounds),worldBounds);state.z=clamp(v.g.position.z-Math.sin(v.heading)*3,-(worldBounds),worldBounds);state.y=height(state.x,state.z);player.position.set(state.x,state.y,state.z);v.speed=0;setMounted(null);return true;}const near=[car,plane].filter(v=>Math.hypot(v.g.position.x-state.x,v.g.position.z-state.z)<(v.type==='plane'?8:5)).sort((a,b)=>a.g.position.distanceTo(player.position)-b.g.position.distanceTo(player.position))[0];if(!near){notice('車・飛行機に近づいて「乗る」。雷アイコンで呼び出せます');return false;}setMounted(near);return true;}
   let ascendHeld=false,descendHeld=false;
   function holdButton(button,change){button.addEventListener('pointerdown',e=>{e.preventDefault();if(ctx.getPaused()||dead)return;change(true);if(e.isTrusted)button.setPointerCapture(e.pointerId);});for(const ev of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(ev,()=>change(false));}
   holdButton($('jump-button'),v=>ascendHeld=v);holdButton($('descend-button'),v=>descendHeld=v);window.addEventListener('blur',()=>{ascendHeld=descendHeld=false;});
   function drive(dt,input){if(!mounted||dead)return;const v=mounted,boost=input.running;const forward=-input.mz,steer=input.mx;
     if(v.type==='car'){const max=boost?45:31;v.speed+=forward*19*dt;v.speed*=Math.exp(-(Math.abs(forward)<.05?1.25:.20)*dt);v.speed=clamp(v.speed,-12,max);v.heading-=steer*1.05*dt*clamp(Math.abs(v.speed)/5,.08,1)*Math.sign(v.speed||1);}
     else{v.speed+=forward*14*dt;v.speed*=Math.exp(-(v.lift>1?.065:.35)*dt);v.speed=clamp(v.speed,0,boost?68:53);v.heading-=steer*.66*dt*clamp(v.speed/12,0,1);const ascend=ascendHeld||keys.has('Space'),descend=descendHeld||keys.has('KeyQ');if(ascend&&v.speed>14)v.lift+=Math.min(18,v.speed*.4)*dt;if(descend)v.lift-=15*dt;if(v.speed<17)v.lift-=Math.max(2,17-v.speed)*dt;v.lift=clamp(v.lift,0,360);}
-    let nx=clamp(v.g.position.x-Math.sin(v.heading)*v.speed*dt,-1410,1410),nz=clamp(v.g.position.z-Math.cos(v.heading)*v.speed*dt,-1410,1410);
+    let nx=clamp(v.g.position.x-Math.sin(v.heading)*v.speed*dt,-(worldBounds-20),worldBounds-20),nz=clamp(v.g.position.z-Math.cos(v.heading)*v.speed*dt,-(worldBounds-20),worldBounds-20);
     if((v.type==='car'||v.lift<3)&&lakeDistance(nx,nz)<104){v.speed=-v.speed*.18;notice('深い水辺には入れません');nx=v.g.position.x;nz=v.g.position.z;}
-    if(Math.abs(nx)>=1410||Math.abs(nz)>=1410)v.speed*=.8;
+    if(Math.abs(nx)>=worldBounds-20||Math.abs(nz)>=worldBounds-20)v.speed*=.8;
     v.g.position.set(nx,height(nx,nz)+v.lift,nz);
     if(v.type==='car'||v.lift<1)terrainPose(v);else{v.g.rotation.order='YXZ';v.g.rotation.y=v.heading;v.g.rotation.x=lerp(v.g.rotation.x,(ascendHeld||keys.has('Space'))?.17:(descendHeld||keys.has('KeyQ'))?-.17:0,1-Math.exp(-dt*4));v.g.rotation.z=lerp(v.g.rotation.z,steer*.36,1-Math.exp(-dt*3));}
     state.x=nx;state.z=nz;state.y=v.g.position.y;player.position.copy(v.g.position);state.moving=0;state.jump=0;
@@ -569,7 +611,7 @@ window.createWildfront = function (ctx) {
     return {g:root,body,legs,arms,weapon};
   }
   function spawnEnemy(type,x,z,index=0){const model=makeEnemy(type);model.g.position.set(x,height(x,z),z);scene.add(model.g);const maxHP=type==='boss'?900:type==='creatures'?100:65;const e={...model,type,x,z,homeX:x,homeZ:z,hp:maxHP,maxHP,attackTimer:.5+index*.17,windup:0,phase:1,dead:false,deathAge:0,hit:0,aggro:false,walk:0,index,retreat:0,ring:null,ringRadius:0,special:0};e.label=label(type==='boss'?'嵐喰らい、グロム':type==='creatures'?'クリーチャーズ':'ゴブリン','enemy '+type,e.g,type==='boss'?10:2.5);const track=document.createElement('span');track.className='enemy-health';const fill=document.createElement('i');track.append(fill);e.label.el.append(track);e.fill=fill;enemies.push(e);return e;}
-  function safeEnemyPoint(x,z){x=clamp(x,-1370,1370);z=clamp(z,-1370,1370);if(lakeDistance(x,z)<107){const a=Math.atan2(z+258,(x-158)/1.22);x=158+Math.cos(a)*113*1.22;z=-258+Math.sin(a)*113;}return {x,z};}
+  function safeEnemyPoint(x,z){x=clamp(x,-(worldBounds-60),worldBounds-60);z=clamp(z,-(worldBounds-60),worldBounds-60);if(lakeDistance(x,z)<107){const a=Math.atan2(z+258,(x-158)/1.22);x=158+Math.cos(a)*113*1.22;z=-258+Math.sin(a)*113;}return {x,z};}
   function spawnGroup(type,ambush=false){const count=type==='creatures'?8:6;if(enemies.filter(e=>!e.dead&&e.type===type).length>=count*2){notice('すでに周辺に襲撃隊がいます');return false;}const centerX=ambush?state.x:home.x+(type==='creatures'?-85:59),centerZ=ambush?state.z:home.z-(type==='creatures'?105:65);for(let i=0;i<count;i++){const a=i/count*Math.PI*2+.32,r=ambush?26+i%3*3:5+i%3*2;const p=safeEnemyPoint(centerX+Math.cos(a)*r,centerZ+Math.sin(a)*r);const e=spawnEnemy(type,p.x,p.z,i);e.aggro=ambush;}if(ambush){activeEncounter=type;combatTimer=12;notice(type==='creatures'?'襲撃！クリーチャーズが包囲している':'ゴブリンの群れが現れた',5);}return true;}
   spawnGroup('goblin');spawnGroup('creatures');
   function startBoss(){if(boss&&!boss.dead){notice('ボスとの戦いは、まだ終わっていません');return false;}if(mounted&&mounted.lift>10){notice('ボスに挑むには、地上に戻ってください');return false;}const p=safeEnemyPoint(state.x-Math.sin(state.yaw)*35,state.z-Math.cos(state.yaw)*35);boss=spawnEnemy('boss',p.x,p.z);boss.aggro=true;activeEncounter='boss';setWeather('storm');$('boss-hud').hidden=false;notice('WORLD BOSS — 嵐喰らい、グロム',5);return true;}
@@ -695,8 +737,9 @@ window.createWildfront = function (ctx) {
   function weatherStep(dt){weather.age+=dt;weather.intensity=lerp(weather.intensity,weather.target,1-Math.exp(-dt*.25));wet.value=lerp(wet.value,weather.type==='rain'||weather.type==='storm'?weather.intensity:0,1-Math.exp(-dt*.22));cloud.value=weather.intensity;if(skyUniforms.uStorm)skyUniforms.uStorm.value=cloud.value;
     const time=Number($('time-slider').value);sun.intensity=(3.35-time*.8)*(1-weather.intensity*.79);hemi.intensity=(2.35-time*.65)*(1-weather.intensity*.42);scene.fog.density=lerp(scene.fog.density,weather.type==='fog'?.009:weather.type==='storm'?.0028:weather.type==='rain'?.0016:.00065,1-Math.exp(-dt*.3));scene.fog.color.lerp(new T.Color(weather.type==='storm'?'#72868b':weather.type==='fog'?'#adb9b2':'#b2c6b5'),1-Math.exp(-dt*.22));
     rain.visible=(weather.type==='rain'||weather.type==='storm')&&weather.intensity>.02;rain.material.opacity=weather.intensity*.30;
+    if(airship?.interiorView)rain.visible=false;
     if(rain.visible){const wind=weather.type==='storm'?7:2;for(let i=0;i<(performanceMode?1200:rainCount);i++){const x=rainSeeds[i*3]+state.x+Math.sin(elapsed*.4+i)*1.3,y=((rainSeeds[i*3+1]-elapsed*28)%55+55)%55+state.y-7,z=rainSeeds[i*3+2]+state.z;const j=i*6;rainPositions[j]=x;rainPositions[j+1]=y;rainPositions[j+2]=z;rainPositions[j+3]=x-wind*.13;rainPositions[j+4]=y+1.65;rainPositions[j+5]=z+.20;}rainGeo.attributes.position.needsUpdate=true;}
-    weather.flash=Math.max(0,weather.flash-dt*3.5);if(weather.type==='storm'&&weather.age>weather.lightningAt){weather.flash=.8;weather.lightningAt=weather.age+8+Math.random()*13;const bolt=[];const x=state.x+(Math.random()-.5)*180,z=state.z-100-Math.random()*150;for(let i=0;i<9;i++)bolt.push(new T.Vector3(x+(Math.random()-.5)*12,height(x,z)+120-i*14,z));const geo=new T.BufferGeometry().setFromPoints(bolt),mat=new T.LineBasicMaterial({color:'#e7eeff',transparent:true});const line=new T.Line(geo,mat);scene.add(line);effects.push({m:line,life:.24,total:.24,v:new T.Vector3(),ring:true});}
+    weather.flash=Math.max(0,weather.flash-dt*3.5);if(weather.type==='storm'&&weather.age>weather.lightningAt){weather.flash=.8;weather.lightningAt=weather.age+8+Math.random()*13;const bolt=[];const hit=airship&&Math.random()<.65?airship.receiveLightning():null;const x=hit?hit.x:state.x+(Math.random()-.5)*180,z=hit?hit.z:state.z-100-Math.random()*150,y=hit?hit.y:height(x,z);for(let i=0;i<9;i++)bolt.push(new T.Vector3(x+(i===8?0:(Math.random()-.5)*12),y+160-i*20,z));const geo=new T.BufferGeometry().setFromPoints(bolt),mat=new T.LineBasicMaterial({color:'#e7eeff',transparent:true});const line=new T.Line(geo,mat);scene.add(line);effects.push({m:line,life:.24,total:.24,v:new T.Vector3(),ring:true});}
     lightningLight.intensity=$('motion-toggle').checked?0:weather.flash*5;$('lightning-overlay').style.opacity=weather.flash*.17;
     if(weather.auto&&weather.age>110&&!(boss&&!boss.dead)){const cycle=['clear','rain','storm','fog'];setWeather(cycle[(cycle.indexOf(weather.type)+1)%4]);}
   }
@@ -739,7 +782,7 @@ window.createWildfront = function (ctx) {
   let stoneEventFired=false;
   function update(dt,paused){const sim=paused||dead?0:dt;elapsed+=sim;attackCD=Math.max(0,attackCD-sim);dodgeCD=Math.max(0,dodgeCD-sim);healCD=Math.max(0,healCD-sim);invincible=Math.max(0,invincible-sim);combatTimer=Math.max(0,combatTimer-sim);hurtTimer=Math.max(0,hurtTimer-dt);$('damage-overlay').style.opacity=hurtTimer>0?.8:0;
     noticeTimer=Math.max(0,noticeTimer-dt);if(noticeTimer<=0)$('action-notice').classList.remove('visible');
-    if(dodgeTime>0&&sim>0&&!airship?.aboard){dodgeTime-=sim;const nx=clamp(state.x+dodgeX*27*sim,-1430,1430),nz=clamp(state.z+dodgeZ*27*sim,-1430,1430);if(lakeDistance(nx,nz)>100){state.x=nx;state.z=nz;state.y=height(nx,nz);player.position.set(nx,state.y+state.jump,nz);}player.rotation.z=Math.sin((.26-dodgeTime)/.26*Math.PI)*.5;}else if(!dead)player.rotation.z=0;
+    if(dodgeTime>0&&sim>0&&!airship?.aboard){dodgeTime-=sim;const nx=clamp(state.x+dodgeX*27*sim,-(worldBounds),worldBounds),nz=clamp(state.z+dodgeZ*27*sim,-(worldBounds),worldBounds);if(lakeDistance(nx,nz)>100){state.x=nx;state.z=nz;state.y=height(nx,nz);player.position.set(nx,state.y+state.jump,nz);}player.rotation.z=Math.sin((.26-dodgeTime)/.26*Math.PI)*.5;}else if(!dead)player.rotation.z=0;
     sword.rotation.x=attackCD>.1?-1.4+Math.sin(attackCD*14)*.8:0;sword.rotation.z=attackCD>.1?-.9:-.27;
     if(sim>0){sensoryStep(sim);enemyStep(sim*(focusTime>0?.25:1));projectileStep(sim);weatherStep(sim);if(elapsed>nextRaid){nextRaid=elapsed+170;if(!airship?.aboard&&(!mounted||mounted.lift<5))spawnGroup('creatures',true);}if(!airship?.aboard&&!stoneEventFired&&Math.hypot(state.x+258,state.z+346)<42&&(!mounted||mounted.lift<5)){stoneEventFired=true;startBoss();}}
     for(const prop of propellers)prop.rotation.z+=sim*(mounted===plane?Math.max(12,plane.speed*1.7):.8);
@@ -764,6 +807,6 @@ window.createWildfront = function (ctx) {
     camera.position.set(state.x,state.y+3.5,state.z+10.5);camera.lookAt(state.x,state.y+1.7,state.z);hud(.2);document.body.dataset.review='boss';
   };
   console.info('Wildfront ready: drivable car, flyable plane, goblins, Creatures squad, boss and 4 weather states.');
-  airship=window.createAirship({...ctx,notice,getDead:()=>dead,getMounted:()=>mounted,onBoard(){dodgeTime=0;cancelAttack();}});
+  airship=window.createAirship({...ctx,notice,getWeather:()=>weather,getDead:()=>dead,getMounted:()=>mounted,onBoard(){dodgeTime=0;cancelAttack();}});
   return api;
 };

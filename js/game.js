@@ -38,17 +38,69 @@
     return mix(mix(hash(ix,iz),hash(ix+1,iz),fx),mix(hash(ix,iz+1),hash(ix+1,iz+1),fx),fz);
   }
   function fbm(x,z) { return noise(x,z)*.57 + noise(x*2.03,z*2.03)*.27 + noise(x*4.07,z*4.07)*.11 + noise(x*8.1,z*8.1)*.05; }
-  function height(x,z) {
+  // Area, rather than each side, is multiplied by six. Shared by every vehicle.
+  const worldScale=Math.sqrt(6), worldBounds=1430*worldScale, worldSize=3200*worldScale;
+  const regions=[
+    ['forest','翠影の大森林','#476d4b','巨木の聖域'],
+    ['autumn','琥珀の丘','#ba7844','紅葉の宿場'],
+    ['wetland','霧葦の湿原','#577f78','湿原の桟橋'],
+    ['coast','白砂の海岸丘陵','#c9c2a0','白砂の灯台'],
+    ['desert','金砂の砂丘','#d8b477','砂漠の隊商跡'],
+    ['canyon','赤岩の峡谷','#b76e50','赤岩の石門'],
+    ['snow','白銀の山脈','#d9e5e6','雪嶺の観測所'],
+    ['volcano','黒曜の火山帯','#575260','黒曜の火口']
+  ].map(([id,name,color,place],i)=>({id,name,color,place,x:Math.cos(i*Math.PI/4)*2450,z:Math.sin(i*Math.PI/4)*2450}));
+  const meadow={id:'meadow',name:'風渡りの平原',color:'#8caa65'};
+  function biomeAt(x,z){
+    if(Math.hypot(x,z)<1050)return meadow;
+    const sector=((Math.atan2(z,x)/(Math.PI/4)+8)%8);
+    return regions[Math.round(sector)%8];
+  }
+  function biomeHeight(i,x,z){
+    const n=fbm(x*.002+12,z*.002+7),r=Math.hypot(x-regions[i].x,z-regions[i].z);
+    switch(regions[i].id){
+      case 'forest':return 18+n*90;
+      case 'autumn':return 22+n*115+Math.sin(z*.008)*20;
+      case 'wetland':return 1+n*7+Math.sin(x*.018+Math.sin(z*.01))*2;
+      case 'coast':return 4+n*19+Math.sin(x*.012+z*.009)*5;
+      case 'desert':return 20+n*50+Math.sin(x*.012+Math.sin(z*.006)*2)*18;
+      case 'canyon':return 35+smooth(.32,.65,n)*150-Math.exp(-Math.pow((z-regions[i].z-Math.sin(x*.004)*120)/110,2))*70;
+      case 'snow':return 100+n*240+Math.pow(Math.max(0,1-r/900),2)*190;
+      default:return 40+n*70+Math.max(0,1-r/950)*260-Math.exp(-Math.pow(r/175,2))*190;
+    }
+  }
+  function terrainColor(x,z,target){
+    const radial=smooth(800,1500,Math.hypot(x,z));
+    const sector=(Math.atan2(z,x)/(Math.PI/4)+8)%8,i=Math.floor(sector),f=smooth(0,1,sector-i);
+    const a=regions[i].tint,b=regions[(i+1)%8].tint;
+    return target.set(meadow.color).lerp(colorScratch.copy(a).lerp(b,f),radial);
+  }
+  regions.forEach(r=>r.tint=new T.Color(r.color));
+  const colorScratch=new T.Color();
+  function rawHeight(x,z) {
     let h = (fbm(x*.0045+40,z*.0045+20)-.44)*91;
     h += Math.sin(x*.013 + z*.006)*6 + Math.sin(z*.016)*3;
     h += (noise(x*.065,z*.065)-.5)*.85;
     const lake = Math.hypot((x-158)/1.22,z+258);
     const basin = 1 - smooth(80,145,lake);
     h = mix(h,-3.5,basin);
+    const radial=smooth(800,1500,Math.hypot(x,z));
+    if(radial){const sector=(Math.atan2(z,x)/(Math.PI/4)+8)%8,i=Math.floor(sector);h=mix(h,mix(biomeHeight(i,x,z),biomeHeight((i+1)%8,x,z),smooth(0,1,sector-i)),radial);}
     return h;
   }
   function smooth(a,b,x) { const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t); }
   function lakeDistance(x,z) { return Math.hypot((x-158)/1.22,z+258); }
+  // One cached triangular height field drives both rendering and collision.
+  // This avoids terrain penetration and repeated fractal evaluation at every hull sample.
+  const terrainCells=240, terrainStep=worldSize/terrainCells, terrainField=new Float32Array(241*241);
+  for(let z=0;z<=terrainCells;z++)for(let x=0;x<=terrainCells;x++)terrainField[z*241+x]=rawHeight(x*terrainStep-worldSize/2,z*terrainStep-worldSize/2);
+  function height(x,z){
+    const gx=clamp((x+worldSize/2)/terrainStep,0,terrainCells),gz=clamp((z+worldSize/2)/terrainStep,0,terrainCells);
+    const ix=Math.min(239,Math.floor(gx)),iz=Math.min(239,Math.floor(gz)),fx=gx-ix,fz=gz-iz;
+    const i=iz*241+ix,a=terrainField[i],b=terrainField[i+1],c=terrainField[i+241],d=terrainField[i+242];
+    return fx+fz<=1?a+(b-a)*fx+(c-a)*fz:d+(c-d)*(1-fx)+(b-d)*(1-fz);
+  }
+
   const sun = new T.DirectionalLight('#fff1ca', 3.05);
   sun.position.set(-240,310,-300);sun.castShadow = true;
   sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-72;sun.shadow.camera.right=72;sun.shadow.camera.top=72;sun.shadow.camera.bottom=-72;sun.shadow.camera.near=1;sun.shadow.camera.far=700;sun.shadow.normalBias=.055;sun.shadow.bias=-.0001;
@@ -73,9 +125,9 @@
   for(let i=0;i<image.data.length;i+=4){const v=rand()*28;image.data[i]=110+v;image.data[i+1]=122+v;image.data[i+2]=63+v*.65;image.data[i+3]=255;}gc.putImageData(image,0,0);
   for(let i=0;i<16000;i++){gc.strokeStyle=rand()>.5?'#bbb88835':'#4f652c35';const x=rand()*512,y=rand()*512;gc.beginPath();gc.moveTo(x,y);gc.lineTo(x+rand()*3,y+3+rand()*6);gc.stroke();}
   const groundTexture=new T.CanvasTexture(groundCanvas);groundTexture.wrapS=groundTexture.wrapT=T.RepeatWrapping;groundTexture.repeat.set(190,190);groundTexture.colorSpace=T.SRGBColorSpace;groundTexture.anisotropy=renderer.capabilities.getMaxAnisotropy();
-  const groundGeo=new T.PlaneGeometry(3200,3200,480,480);groundGeo.rotateX(-Math.PI/2);
+  const groundGeo=new T.PlaneGeometry(worldSize,worldSize,480,480);groundGeo.rotateX(-Math.PI/2);
   const gp=groundGeo.attributes.position;const gColors=[];const c=new T.Color();
-  for(let i=0;i<gp.count;i++){const x=gp.getX(i),z=gp.getZ(i);gp.setY(i,height(x,z));const n=fbm(x*.012+1,z*.012);c.setHSL(.20+n*.035,.27+n*.13,.43+n*.2);const ld=lakeDistance(x,z);if(ld<109)c.lerp(new T.Color('#c5be8f'),1-smooth(88,109,ld));gColors.push(c.r,c.g,c.b);}
+  for(let i=0;i<gp.count;i++){const x=gp.getX(i),z=gp.getZ(i);gp.setY(i,height(x,z));const n=fbm(x*.012+1,z*.012);terrainColor(x,z,c).multiplyScalar(.85+n*.3);const ld=lakeDistance(x,z);if(ld<109)c.lerp(new T.Color('#c5be8f'),1-smooth(88,109,ld));gColors.push(c.r,c.g,c.b);}
   groundGeo.setAttribute('color',new T.Float32BufferAttribute(gColors,3));groundGeo.computeVertexNormals();
   // Reuse the same height vertices at a coarser index stride; no terrain rebuild on quality changes.
   const terrainIndices={1:groundGeo.index};
@@ -86,7 +138,7 @@
   for(let layer=0;layer<3;layer++){
     const mg=new T.PlaneGeometry(6400,1100,200,38);mg.rotateX(-Math.PI/2);const p=mg.attributes.position,cols=[];
     for(let i=0;i<p.count;i++){
-      const x=p.getX(i),localZ=p.getZ(i),z=localZ-1230-layer*420;
+      const x=p.getX(i),localZ=p.getZ(i),z=localZ-worldSize/2-600-layer*420;
       const ridge=Math.pow(Math.max(0,Math.sin((localZ+550)/1100*Math.PI)),1.2);
       const profile=115+noise(x*.0027+layer*5,layer+1)*430+noise(x*.008,layer*2)*100;
       const h=ridge*profile+(fbm(x*.014,z*.014)-.3)*ridge*100-25;
@@ -159,7 +211,7 @@
   function updateGrass(budget=1500){
     if(!grassPending)return;
     const start=grassCursor,end=Math.min(grassTarget,start+budget);
-    for(let i=start;i<end;i++){const x=grassOffsets[i*4]+grassCenterX,z=grassOffsets[i*4+1]+grassCenterZ,h=height(x,z);let s=grassOffsets[i*4+3];if(lakeDistance(x,z)<96||h< -1.4||sceneryClearance(x,z))s=0;
+    for(let i=start;i<end;i++){const x=grassOffsets[i*4]+grassCenterX,z=grassOffsets[i*4+1]+grassCenterZ,h=height(x,z);let s=grassOffsets[i*4+3];if(lakeDistance(x,z)<96||h< -1.4||sceneryClearance(x,z)||['desert','canyon','snow','volcano','coast'].includes(biomeAt(x,z).id))s=0;
       const pathX=14*Math.sin(z*.019)-4;if(Math.abs(x-pathX)<1.8&&z<95&&z>-200)s*=.16;
       dummy.position.set(x,h-.05,z);dummy.rotation.set(0,grassOffsets[i*4+2],0);dummy.scale.set(s*.58,s*.72,s*.72);dummy.updateMatrix();grass.setMatrixAt(i,dummy.matrix);
     }
@@ -230,7 +282,7 @@
   for(let i=0;i<2;i++){const arm=new T.Mesh(new T.CapsuleGeometry(.10,.49,4,8),cloth);arm.position.set(i===0?-.36:.36,1.22,0);arm.rotation.z=i===0?-.16:.16;player.add(arm);}
   player.traverse(o=>{if(o.isMesh)o.castShadow=true;});
   const state={x:0,z:62,y:0,yaw:0,pitch:.10,vy:0,jump:0,onGround:true,running:false,sensitivity:1,moving:0,walkTime:0};
-  if(Number.isFinite(saved.x)&&Number.isFinite(saved.z)&&Math.abs(saved.x)<1400&&Math.abs(saved.z)<1400){state.x=saved.x;state.z=saved.z;}
+  if(Number.isFinite(saved.x)&&Number.isFinite(saved.z)&&Math.abs(saved.x)<worldBounds&&Math.abs(saved.z)<worldBounds){state.x=saved.x;state.z=saved.z;}
   state.y=height(state.x,state.z);player.position.set(state.x,state.y,state.z);plantGrass(state.x,state.z,true);
   camera.position.set(state.x,state.y+5.7,state.z+10.3);camera.lookAt(state.x,state.y+2,state.z-13);
 
@@ -335,12 +387,12 @@
   window.addEventListener('resize',resize);resize();
 
   // The same height field powers the illustrated maps, including the real lake.
-  const mapSize=1024,mapSpan=4600;
+  const mapSize=1024,mapSpan=worldSize*1.4;
   const mapBase=document.createElement('canvas');mapBase.width=mapBase.height=mapSize;
   const mb=mapBase.getContext('2d'),mi=mb.createImageData(mapSize,mapSize);
   for(let py=0;py<mapSize;py++)for(let px=0;px<mapSize;px++){
     const x=(px/mapSize-.5)*mapSpan,z=(py/mapSize-.5)*mapSpan,h=height(x,z),v=noise(x*.04,z*.04),index=(py*mapSize+px)*4;
-    const contour=Math.abs((h+100)%5)<.38;let r=85+h*.6+v*8,g=108+h*.55+v*8,b=78+h*.4;
+    const contour=Math.abs((h+100)%20)<.8;terrainColor(x,z,c).convertLinearToSRGB();let r=c.r*180+h*.08+v*8,g=c.g*180+h*.08+v*8,b=c.b*180+h*.08;
     if(lakeDistance(x,z)<97){r=92;g=137;b=134;}if(contour){r-=13;g-=13;b-=10;}
     mi.data[index]=r;mi.data[index+1]=g;mi.data[index+2]=b;mi.data[index+3]=255;
   }
@@ -352,8 +404,8 @@
     // Frame both the memories and the traveller, including the world edges.
     const minX=Math.min(-425,state.x-120),maxX=Math.max(325,state.x+120);
     const minZ=Math.min(-464,state.z-120),maxZ=Math.max(204,state.z+120);
-    const span=large?Math.max(850,maxX-minX,(maxZ-minZ)*w/h):480;
-    const centerX=large?(minX+maxX)/2:state.x,centerZ=large?(minZ+maxZ)/2:state.z,scale=w/span;
+    const span=large?worldSize*1.06*w/h:480;
+    const centerX=large?0:state.x,centerZ=large?0:state.z,scale=w/span;
     const sx=((centerX-span/2)/mapSpan+.5)*mapSize,sy=((centerZ-span*h/w/2)/mapSpan+.5)*mapSize;
     ctx.fillStyle='#617555';ctx.fillRect(0,0,w,h);ctx.drawImage(mapBase,sx,sy,span/mapSpan*mapSize,span*h/w/mapSpan*mapSize,0,0,w,h);
     ctx.strokeStyle='#e5e2b91a';ctx.lineWidth=1;
@@ -373,6 +425,7 @@
     }
     ctx.beginPath();ctx.setLineDash([3,7]);ctx.strokeStyle='#ede0a65e';landmarks.forEach((l,i)=>i?ctx.lineTo(mx(l.x),mz(l.z)):ctx.moveTo(mx(l.x),mz(l.z)));ctx.stroke();ctx.setLineDash([]);
     landmarks.forEach(l=>{const x=mx(l.x),z=mz(l.z);ctx.save();ctx.translate(x,z);ctx.rotate(Math.PI/4);ctx.fillStyle='#e6d39c';ctx.strokeStyle='#efdeaa';ctx.lineWidth=large?2:1.5;const size=large?6:4;if(discovered.has(l.id))ctx.fillRect(-size,-size,size*2,size*2);else ctx.strokeRect(-size,-size,size*2,size*2);ctx.restore();if(large)drawLabel(l.name,x,z,true);});
+    if(large)regions.forEach(r=>drawLabel(r.place,mx(r.x),mz(r.z),true));
     expansion.drawMap(ctx,mx,mz,large,drawLabel);
     ctx.save();ctx.translate(mx(state.x),mz(state.z));ctx.rotate(-state.yaw);ctx.fillStyle='#fff5d6';ctx.shadowBlur=10;ctx.shadowColor='#fcf3c3';ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(-5,6);ctx.lineTo(0,3);ctx.lineTo(5,6);ctx.closePath();ctx.fill();ctx.restore();ctx.restore();
     if(large)lastMapLabels=labels;
@@ -392,13 +445,14 @@
       $('landmark-marker').style.opacity=visible?'1':'0';$('landmark-marker').style.left=`${(markerVector.x*.5+.5)*innerWidth}px`;$('landmark-marker').style.top=`${(-markerVector.y*.5+.5)*innerHeight}px`;$('marker-label').textContent=target.name;$('marker-distance').textContent=distance+' m';
     }else{$('quest-title').textContent='草原の記憶をすべて見つけた';$('quest-distance').textContent='旅はつづく';$('landmark-marker').style.opacity=0;}
     const names=['N','NE','E','SE','S','SW','W','NW'];const heading=((Math.round(-state.yaw/(Math.PI/4))%8)+8)%8;$('compass-main').textContent=names[heading];$('compass-left').textContent=names[(heading+7)%8];$('compass-right').textContent=names[(heading+1)%8];
+    document.querySelector('.region-label h2').textContent=biomeAt(state.x,state.z).name;
     $('map-coordinates').textContent=`E ${Math.round(state.x).toString().padStart(4,'0')} · N ${Math.round(-state.z).toString().padStart(4,'0')}`;drawMap(mapCtx,280,280,false);
   }
 
   // Small drifting seeds and distant birds bring the landscape to life.
   const moteGeo=new T.BufferGeometry();const motePos=new Float32Array(180*3);for(let i=0;i<180;i++){motePos[i*3]=(rand()-.5)*100;motePos[i*3+1]=rand()*14;motePos[i*3+2]=(rand()-.5)*100;}moteGeo.setAttribute('position',new T.BufferAttribute(motePos,3));const motes=new T.Points(moteGeo,new T.PointsMaterial({color:'#fff4c9',size:.075,transparent:true,opacity:.68,depthWrite:false}));scene.add(motes);
   const birds=[];const birdMat=new T.MeshBasicMaterial({color:'#52645d',side:T.DoubleSide});const wingGeo=new T.BufferGeometry();wingGeo.setAttribute('position',new T.Float32BufferAttribute([0,0,0,1.1,.12,.16,.2,0,.31],3));wingGeo.computeVertexNormals();for(let i=0;i<12;i++){const g=new T.Group();const left=new T.Mesh(wingGeo,birdMat),right=new T.Mesh(wingGeo,birdMat);right.scale.x=-1;g.add(left,right);scene.add(g);birds.push({g,left,right,phase:rand()*6,r:80+rand()*140,y:65+rand()*65});}
-  const expansion=window.createWildfront({T,scene,camera,renderer,state,player,height,lakeDistance,keys,ground,rocks,trunks,crowns,stoneMat,brickMats,sun,hemi,skyUniforms,testing,openDialog,discovered,playCue,resetInputs:()=>{keys.clear();resetStick();endLook();state.running=false;$('run-button').classList.remove('active');$('run-button').setAttribute('aria-pressed','false');},getPaused:()=>paused});
+  const expansion=window.createWildfront({T,scene,camera,renderer,state,player,height,lakeDistance,worldBounds,worldSize,biomeAt,regions,keys,ground,rocks,trunks,crowns,stoneMat,brickMats,sun,hemi,skyUniforms,testing,openDialog,discovered,playCue,resetInputs:()=>{keys.clear();resetStick();endLook();state.running=false;$('run-button').classList.remove('active');$('run-button').setAttribute('aria-pressed','false');},getPaused:()=>paused});
   let contextLost=false;
   $('world').addEventListener('webglcontextlost',event=>{
     event.preventDefault();contextLost=true;paused=true;keys.clear();resetStick();expansion.pauseInputs();
@@ -461,7 +515,7 @@
       if(expansion.airship.aboard){expansion.airship.setInput({mx,mz,running});}
       else if(!expansion.mounted){
       const dx=mx*Math.cos(state.yaw)+mz*Math.sin(state.yaw),dz=-mx*Math.sin(state.yaw)+mz*Math.cos(state.yaw);
-      let nx=clamp(state.x+dx*speed*dt,-1430,1430),nz=clamp(state.z+dz*speed*dt,-1430,1430);
+      let nx=clamp(state.x+dx*speed*dt,-worldBounds,worldBounds),nz=clamp(state.z+dz*speed*dt,-worldBounds,worldBounds);
       // No invisible water floor: the shore gently blocks entry into deep water.
       if(lakeDistance(nx,nz)<97){const a=Math.atan2(nz+258,(nx-158)/1.22);nx=158+Math.cos(a)*97*1.22;nz=-258+Math.sin(a)*97;}
       state.x=nx;state.z=nz;state.moving=mix(state.moving,strength,1-Math.exp(-dt*9));state.walkTime+=dt*(running?13:8)*strength;
@@ -497,6 +551,6 @@
   animate();
   if(testing&&new URLSearchParams(location.search).get('review')==='boss')expansion.test.prepareBoss();
   // Diagnostics; state-mutating verification hooks exist only in selftest mode.
-  window.verdantWorld={expansion,getState:()=>({position:{x:state.x,y:state.y,z:state.z},jump:state.jump,onGround:state.onGround,yaw:state.yaw,running:state.running,discovered:[...discovered],paused,grass:grassCount,graphics:{preset:Number($('quality-select').value),width:renderSize.x,height:renderSize.y,pixelRatio:renderer.getPixelRatio(),shadowSize:sun.shadow.mapSize.x,activeGrass:grass.count,grassTarget,grassPending,terrainTriangles:groundGeo.index.count/3,autoScale,frameAverageMs:frameAverage*1000,shadowEveryFrame:renderer.shadowMap.autoUpdate},scenery:expansion.getSceneryStats(),webgl:renderer.capabilities.isWebGL2?'WebGL2':'WebGL1',drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
+  window.verdantWorld={expansion,world:{size:worldSize,bounds:worldBounds,areaRatio:6,regions:regions.map(({tint,...r})=>r),biomeAt,height},getState:()=>({position:{x:state.x,y:state.y,z:state.z},jump:state.jump,onGround:state.onGround,yaw:state.yaw,running:state.running,discovered:[...discovered],paused,grass:grassCount,graphics:{preset:Number($('quality-select').value),width:renderSize.x,height:renderSize.y,pixelRatio:renderer.getPixelRatio(),shadowSize:sun.shadow.mapSize.x,activeGrass:grass.count,grassTarget,grassPending,terrainTriangles:groundGeo.index.count/3,autoScale,frameAverageMs:frameAverage*1000,shadowEveryFrame:renderer.shadowMap.autoUpdate},scenery:expansion.getSceneryStats(),webgl:renderer.capabilities.isWebGL2?'WebGL2':'WebGL1',drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
   if(testing)window.verdantWorld.test={sampleFrame,resetFrameWindow,setObjectView,mapLabels:()=>lastMapLabels.map(r=>({...r})),flushGrass:()=>updateGrass(grassCount),renderReview(){reviewCamera();sky.position.copy(camera.position);renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');}};
 })();
