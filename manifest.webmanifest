@@ -1,0 +1,11 @@
+{
+  "name": "風のゆくえ — THE VERDANT WILDS",
+  "short_name": "風のゆくえ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1b322c",
+  "theme_color": "#14251f",
+  "lang": "ja"
+}
