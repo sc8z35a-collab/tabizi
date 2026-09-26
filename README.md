@@ -1,5 +1,52 @@
 # 風のゆくえ — THE VERDANT WILDS / WILDFRONT
 
+## 2026-09-26 更新：FLAGSHIP描画・横画面全画面専用・6エージェントビルド
+### FLAGSHIP（新しい初期設定）— `js/postfx.js`
+- ハイエンドAndroid向けに、スマホ・タブレットの初期画質を **FLAGSHIP** にしました。景観密度も100%で始まります。
+- 描画は半精度浮動小数のHDRレンダーターゲットに4倍MSAAで行い、次の処理を重ねます。
+  - ブルーム：Karis平均・ソフトニーの6段ダウン／アップサンプル
+  - 太陽光芒：深度で遮蔽を判定し、64タップの放射ブラー
+  - 大気散乱：深度に応じた太陽光の散乱
+  - 色調：ACESフィルミック、色調補正、ビネット、フィルム粒子、ディザ
+- 画素密度は端末本来の値（上限3倍、総画素数約466万）。影4096px、草98,000本、地形46万三角形です。
+- 空シェーダーは、表示用の色をACESの逆変換でHDRに戻します。このため地平線・雪山・雲のコントラストは従来の描画と同等に保たれ、太陽円盤だけが高輝度になりブルームを生みます。
+- 平均25fps未満が続いた時だけ解像度を段階的に下げます。下限はネイティブの75%で、余裕が戻れば元に戻します。
+- `?quality=0..5` で画質を強制できます（5=FLAGSHIP）。selftestは従来どおり動作優先で始まり、回帰の基準を維持します。
+- WebGL2と半精度浮動小数の描画に対応していない端末では、自動でExtremeになります。
+
+### 横画面・全画面専用 — `js/landscape.js` / `css/landscape.css` / `manifest.webmanifest`
+- タッチ端末では開始画面が表示され、1回のタップで全画面表示と横向き固定（`screen.orientation.lock`）を要求します。
+- 縦向きの間は回転を促す画面で覆い、ゲームを一時停止します。入力も解除します。
+- 全画面が解除された時は、上部の「全画面に戻る」から復帰できます。
+- Web Manifest（`display: fullscreen` / `orientation: landscape`）で、ホーム画面に追加した場合も横向き全画面で起動します。
+- PC・selftest・テスト画面は従来どおりです。PCで確認する場合は `?landscape=1` で同じ動作になります。
+
+### 6エージェント自動ビルドパイプライン — `tools/agents/`
+```
+node tools/agents/pipeline.mjs            # 6エージェント並列（LLMの疎通確認付き）
+node tools/agents/pipeline.mjs --browser  # QAエージェントが実ブラウザで回帰テストも実行
+```
+| エージェント | 担当 |
+|---|---|
+| architect | スクリプトの読み込み順、アセットの欠落、キャッシュ更新用バージョンの整合 |
+| graphics | MSAA・HDR・tone mapping・描画経路の監査 |
+| mobile | 横向き固定、全画面、viewport、safe-area、manifest、文字サイズ |
+| performance | 毎フレームの割当検出、画素数の上限、DRSの下限 |
+| qa | 全JSの構文、`tests.html` / `expansion-tests.html` のヘッドレス実行 |
+| release | git状態、READMEの整合 |
+
+- 起動時に `~/.genspark_llm.yaml` または `OPENAI_API_KEY` / `OPENAI_BASE_URL` を使い、LLMプロキシの疎通を確認します。実際に回答が得られた場合は、6エージェントそれぞれが担当ファイルのLLMレビューを並列で追加します。
+- 2026-09-26時点では、プロキシが「Free-plan credits can't be used with the Genspark API / LLM proxy」を返します。このためLLMレビューは実行されず、6エージェントのローカル解析と実ブラウザでの回帰テストのみが動きます。その理由はレポートに明記され、黙ってスキップすることはありません。クレジットを追加すれば、コードを変更せずにLLMレビューが有効になります。
+- レポートは `.qa/agents-report.md` / `.json` に出力されます（git管理外）。
+
+### 検証（2026-09-26）
+- `tests.html`：38項目すべてPASS（FLAGSHIPのHDR経路・描画サイズ・解放の新規3項目を含む）
+- `expansion-tests.html`：140項目すべてPASS
+- スマホ横画面915×412の実描画：開始画面、タップ後の全画面・FLAGSHIP描画、縦向きでの一時停止と回転画面を確認
+  - 画像：`previews/flagship-phone-landscape.png`、`previews/start-gate-phone.png`
+- 検証環境はソフトウェアWebGLです。実機のFPS・発熱・触感は未検証です。
+
+
 ## 2026-09-19 更新：景観拡張と動作優先
 - 初期設定は **Performance / 動作優先**。描画は最大160万画素・CSSピクセル比1、負荷が続く場合は倍率を0.65まで段階的に下げ、余裕が続く場合だけ戻します。固定FPSを保証する機能ではありません。
 - 草の初期描画は30,000本（高画質では98,000本）。移動時の再配置は1フレーム1,500本ずつ行い、大きな一括更新を避けます。
@@ -153,6 +200,11 @@ index.html                 本編と探索・車両・戦闘HUD、各ダイア�
 css/style.css              元の画面スタイル
 css/expansion.css          拡張UIと戦闘時のスマホレイアウト
 js/game.js                 基本ワールド、操作、カメラ、探索、保存
+js/postfx.js               FLAGSHIPのHDR後処理（MSAA・ブルーム・光芒・ACES）
+js/landscape.js            横画面・全画面専用の開始画面と回転画面
+css/landscape.css          開始画面・回転画面のスタイル
+manifest.webmanifest       全画面・横向きのWeb Manifest
+tools/agents/              6エージェント自動ビルドパイプライン
 js/expansion.js            車両造形と操縦、敵AI、戦闘、天候、質感
 images/grass-color.jpg     草地カラーテクスチャ
 js/tests.js                基本機能14項目の確認

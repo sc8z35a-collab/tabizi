@@ -64,7 +64,7 @@ body:not(.airship-pilot) .as-power{visibility:hidden}
 #airship-hud #airship-boost.active{border-color:#f4df9d;box-shadow:0 0 15px #c9e9c944}
 #airship-deck{position:absolute;top:77px;right:var(--as-edge);font:9px monospace}
 @media(orientation:landscape) and (max-height:600px) and (max-width:1400px){
- #airship-hud{--as-bottom:max(8px,env(safe-area-inset-bottom));--as-edge:max(10px,env(safe-area-inset-left))}
+ #airship-hud,body.aboard-airship{--as-bottom:max(8px,env(safe-area-inset-bottom));--as-edge:max(10px,env(safe-area-inset-left))}
  .aboard-airship .brand,.aboard-airship .control-caption,.as-title,.as-navigation,.as-help{display:none!important}
  .aboard-airship .topbar{top:max(4px,env(safe-area-inset-top));left:auto;right:max(8px,env(safe-area-inset-right));padding:0;width:auto}
  .aboard-airship .tools{gap:2px}.aboard-airship .tools button{width:44px;height:44px;min-width:44px}

@@ -21,6 +21,15 @@
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.13;
+  // Cinematic HDR pipeline, used by the FLAGSHIP preset (see js/postfx.js).
+  const postfx = window.VerdantPostFX ? window.VerdantPostFX(T, renderer) : null;
+  const flagshipDefault = !testing && !!(postfx && postfx.supported);
+  const requestedQuality = new URLSearchParams(location.search).get('quality');
+  // The target device is a high-end Android phone in fullscreen landscape: start at FLAGSHIP with full scenery.
+  // ?quality=0..5 overrides (selftest keeps the lightweight default so regression budgets stay comparable).
+  if (requestedQuality !== null && /^[0-5]$/.test(requestedQuality)) $('quality-select').value = requestedQuality;
+  else if (flagshipDefault) { $('quality-select').value = '5'; $('density-select').value = '1'; }
+  if (Number($('quality-select').value) === 5 && !(postfx && postfx.supported)) $('quality-select').value = '3';
   const scene = new T.Scene();
   scene.background = new T.Color('#9dbbc0');
   scene.fog = new T.FogExp2('#b2c6b5', 0.00065);
@@ -107,17 +116,21 @@
   sun.shadow.mapSize.set(1024,1024);sun.shadow.camera.left=-72;sun.shadow.camera.right=72;sun.shadow.camera.top=72;sun.shadow.camera.bottom=-72;sun.shadow.camera.near=1;sun.shadow.camera.far=700;sun.shadow.normalBias=.055;sun.shadow.bias=-.0001;
   scene.add(sun, sun.target);
   const hemi = new T.HemisphereLight('#dce9ec','#6a713b',2.15);scene.add(hemi);
-  const skyUniforms = { uTime:{value:0}, uWarm:{value:.28}, uStorm:{value:0}, uSun:{value:new T.Vector3(-.46,.24,-.75).normalize()} };
+  const skyUniforms = { uTime:{value:0}, uWarm:{value:.28}, uStorm:{value:0}, uSun:{value:new T.Vector3(-.46,.24,-.75).normalize()}, uHdr:{value:0}, uExposure:{value:1.13} };
   const sky = new T.Mesh(new T.SphereGeometry(3000,48,24), new T.ShaderMaterial({
     side:T.BackSide,depthWrite:false,uniforms:skyUniforms,
     vertexShader:'varying vec3 vDir;void main(){vDir=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
     fragmentShader:`precision highp float;
-      varying vec3 vDir;uniform float uTime;uniform float uWarm;uniform float uStorm;uniform vec3 uSun;
+      varying vec3 vDir;uniform float uTime;uniform float uWarm;uniform float uStorm;uniform vec3 uSun;uniform float uHdr;uniform float uExposure;
       float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
       float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}
       float fb(vec2 p){float v=0.;float a=.5;for(int i=0;i<5;i++){v+=n(p)*a;p=p*2.03+vec2(4.7,7.1);a*=.5;}return v;}
       void main(){vec3 d=normalize(vDir);float y=max(d.y,0.);vec3 zenith=mix(vec3(.21,.43,.56),vec3(.31,.43,.51),uWarm);vec3 horizon=mix(vec3(.79,.86,.80),vec3(.95,.81,.61),uWarm);vec3 col=mix(horizon,zenith,pow(y,.45));float sd=max(dot(d,uSun),0.);col+=vec3(1.,.81,.44)*pow(sd,12.)*.22;col+=vec3(1.,.91,.67)*pow(sd,520.)*1.9;
-      vec2 p=d.xz/(max(d.y,.05)+.18)*2.1+vec2(uTime*.0015,0.);float cloud=fb(p);float mask=smoothstep(.48,.76,cloud)*smoothstep(.005,.14,d.y);vec3 cc=mix(vec3(.67,.75,.73),vec3(1.,.97,.86),smoothstep(.45,.8,cloud));col=mix(col,cc,mask*.92);vec3 stormSky=mix(vec3(.31,.37,.39),vec3(.095,.14,.17),pow(y,.4));stormSky+=fb(p*1.4)*.09;col=mix(col,stormSky,uStorm*.90);gl_FragColor=vec4(col,1.);}`
+      vec2 p=d.xz/(max(d.y,.05)+.18)*2.1+vec2(uTime*.0015,0.);float cloud=fb(p);float mask=smoothstep(.48,.76,cloud)*smoothstep(.005,.14,d.y);vec3 cc=mix(vec3(.67,.75,.73),vec3(1.,.97,.86),smoothstep(.45,.8,cloud));col=mix(col,cc,mask*.92);vec3 stormSky=mix(vec3(.31,.37,.39),vec3(.095,.14,.17),pow(y,.4));stormSky+=fb(p*1.4)*.09;col=mix(col,stormSky,uStorm*.90);
+      if(uHdr>.5){vec3 y=clamp(mix(col/12.92,pow((col+.055)/1.055,vec3(2.4)),step(.04045,col)),0.,.98);
+        vec3 qa=1.-.983729*y,qb=.0245786-.432951*y,qc=-(.000090537+.238081*y);col=(-qb+sqrt(qb*qb-4.*qa*qc))/(2.*qa)*.6/uExposure;
+        col+=vec3(1.,.9,.7)*pow(sd,900.)*26.*(1.-uStorm);col+=vec3(1.,.8,.55)*pow(sd,40.)*.3*(1.-uStorm);}
+      gl_FragColor=vec4(col,1.);}`
   }));scene.add(sky);
 
   // A textured, vertex-coloured continuous landscape, not an image backdrop.
@@ -283,7 +296,7 @@
   for(let i=0;i<2;i++){const arm=new T.Mesh(new T.CapsuleGeometry(.10,.49,4,8),cloth);arm.position.set(i===0?-.36:.36,1.22,0);arm.rotation.z=i===0?-.16:.16;player.add(arm);}
   player.traverse(o=>{if(o.isMesh)o.castShadow=true;});
   const state={x:0,z:62,y:0,yaw:0,pitch:.10,vy:0,jump:0,onGround:true,running:false,sensitivity:1,moving:0,walkTime:0};
-  if(Number.isFinite(saved.x)&&Number.isFinite(saved.z)&&Math.abs(saved.x)<worldBounds&&Math.abs(saved.z)<worldBounds){state.x=saved.x;state.z=saved.z;}
+  if(Number.isFinite(saved.x)&&Number.isFinite(saved.z)&&Math.abs(saved.x)<worldBounds&&Math.abs(saved.z)<worldBounds&&lakeDistance(saved.x,saved.z)>=97){state.x=saved.x;state.z=saved.z;}
   state.y=height(state.x,state.z);player.position.set(state.x,state.y,state.z);plantGrass(state.x,state.z,true);
   camera.position.set(state.x,state.y+5.7,state.z+10.3);camera.lookAt(state.x,state.y+2,state.z-13);
 
@@ -298,7 +311,7 @@
   $('world').addEventListener('pointerdown',e=>{if(paused||expansion.dead||lookPointer!==null)return;lookPointer=e.pointerId;lastLookX=e.clientX;lastLookY=e.clientY;$('world').setPointerCapture(e.pointerId);startAudioIfEnabled();});
   $('world').addEventListener('pointermove',e=>{if(e.pointerId!==lookPointer||paused)return;state.yaw-=(e.clientX-lastLookX)*.004*state.sensitivity;state.pitch=clamp(state.pitch+(e.clientY-lastLookY)*.003*state.sensitivity,expansion.airship?.aboard?-1.1:-.3,expansion.airship?.aboard?1.1:.85);lastLookX=e.clientX;lastLookY=e.clientY;});
   const endLook=()=>{lookPointer=null;};for(const type of ['pointerup','pointercancel','lostpointercapture'])$('world').addEventListener(type,e=>{if(e.pointerId===lookPointer)endLook();});
-  window.addEventListener('keydown',e=>{if(paused||expansion.dead)return;if(e.target.closest?.('input,select,textarea')||(e.code==='Space'&&e.target.closest?.('button')))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys.add(e.code);if(e.code==='Space'&&!e.repeat)jump();if(e.code==='KeyM')openDialog('map-dialog');});window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>{keys.clear();resetStick();endLook();});
+  window.addEventListener('keydown',e=>{if(paused||expansion.dead)return;if(e.target.closest?.('input,select,textarea'))return;if(e.code==='Space'&&e.target.closest?.('button'))e.preventDefault();if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys.add(e.code);if(e.code==='Space'&&!e.repeat)jump();if(e.code==='KeyM')openDialog('map-dialog');});window.addEventListener('keyup',e=>{keys.delete(e.code);if(e.code==='Space'&&e.target.closest?.('button')&&!e.target.closest?.('#airship-hud'))e.preventDefault();});window.addEventListener('blur',()=>{keys.clear();resetStick();endLook();});
   function jump(){if(expansion.airship?.aboard){if(!paused)expansion.airship.jump();return;}if(state.onGround&&!paused&&!expansion.mounted&&!expansion.dead){state.vy=7.4;state.onGround=false;}}
   $('jump-button').addEventListener('pointerdown',e=>{e.preventDefault();jump();startAudioIfEnabled();});$('jump-button').addEventListener('click',e=>{if(e.detail===0)jump();});
   $('run-button').addEventListener('click',()=>{if(paused||expansion.dead)return;state.running=!state.running;$('run-button').classList.toggle('active',state.running);$('run-button').setAttribute('aria-pressed',String(state.running));});
@@ -324,10 +337,15 @@
   function startAudioIfEnabled(){if(audioEnabled&&audioContext)audioContext.resume().catch(()=>{});}
   $('sound-button').addEventListener('click',()=>{if(!audioContext)createAudio();if(!audioContext)return;audioEnabled=!audioEnabled;audioContext.resume().catch(()=>{});audioGain.gain.setTargetAtTime(audioEnabled?.45:0,audioContext.currentTime,.4);$('sound-button').classList.toggle('muted',!audioEnabled);$('sound-button').title=audioEnabled?'環境音をオフ':'環境音をオン';$('sound-button').setAttribute('aria-pressed',String(audioEnabled));});
   $('fullscreen-button').addEventListener('click',async()=>{try{if(document.fullscreenElement){await document.exitFullscreen();}else{if(!document.documentElement.requestFullscreen){$('ambient-caption').textContent='このブラウザーでは全画面表示に対応していません。';return;}await document.documentElement.requestFullscreen();if(screen.orientation&&screen.orientation.lock)await screen.orientation.lock('landscape').catch(()=>{});}}catch(e){$('ambient-caption').textContent='スマホを横向きにしてお楽しみください。';}});
-  function openDialog(id){if(expansion.dead)return;expansion.pauseInputs();keys.clear();resetStick();paused=true;$(id).showModal();if(id==='map-dialog')drawLargeMap();}
+  function openDialog(id){if(expansion.dead||contextLost)return;const dialog=$(id);if(dialog.open)return;expansion.pauseInputs();keys.clear();resetStick();endLook();paused=true;dialog.showModal();if(id==='map-dialog')drawLargeMap();}
+  // dialog.close() queues its 'close' event; resync pause immediately so gameplay never stays frozen.
+  const orientationBlocked=()=>{const l=window.verdantLandscape;return !!(l&&l.enabled&&(!l.started||l.portrait));};
+  function syncPause(){paused=contextLost||objectReview||orientationBlocked()||!!document.querySelector('dialog[open]');}
+  window.addEventListener('verdant-orientation',()=>{if(orientationBlocked()){keys.clear();resetStick();endLook();if(typeof expansion!=='undefined')expansion.pauseInputs();}syncPause();});
+  document.querySelectorAll('dialog').forEach(d=>{const close=d.close.bind(d);d.close=value=>{if(d.id==='defeat-dialog'&&expansion.dead)return;close(value);syncPause();};});
   $('controls-guide').addEventListener('click',()=>{$('settings-dialog').close();openDialog('guide-dialog');});
   $('settings-button').addEventListener('click',()=>openDialog('settings-dialog'));$('guide-button').addEventListener('click',()=>openDialog('guide-dialog'));$('map-button').addEventListener('click',()=>openDialog('map-dialog'));
-  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));document.querySelectorAll('dialog').forEach(d=>{d.addEventListener('close',()=>{paused=!!document.querySelector('dialog[open]');});d.addEventListener('click',e=>{if(d.id==='defeat-dialog')return;if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}});});
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));document.querySelectorAll('dialog').forEach(d=>{d.addEventListener('cancel',e=>{if(d.id==='defeat-dialog'&&expansion.dead)e.preventDefault();});d.addEventListener('close',()=>{if(d.id==='defeat-dialog'&&expansion.dead&&!contextLost){d.showModal();return;}syncPause();});d.addEventListener('click',e=>{if(d.id==='defeat-dialog')return;if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}});});
   $('quality-select').addEventListener('change',()=>{autoScale=1;resetFrameWindow();resize();applyWorldQuality();});
   $('density-select').addEventListener('change',()=>expansion.setSceneryDensity(Number($('density-select').value)));
   $('sensitivity-slider').addEventListener('input',e=>state.sensitivity=Number(e.target.value));$('hud-toggle').addEventListener('change',e=>document.body.classList.toggle('clean-hud',!e.target.checked));$('detail-toggle').addEventListener('change',e=>document.body.classList.toggle('immersive',!e.target.checked));$('motion-toggle').checked=matchMedia('(prefers-reduced-motion: reduce)').matches;document.body.classList.toggle('reduced-motion',$('motion-toggle').checked);$('motion-toggle').addEventListener('change',e=>document.body.classList.toggle('reduced-motion',e.target.checked));$('dismiss-portrait').addEventListener('click',()=>$('portrait-hint').style.display='none');
@@ -347,30 +365,44 @@
   let autoScale=1,frameSeconds=0,frameSamples=0,slowWindows=0,fastWindows=0,frameAverage=0;
   function resetFrameWindow(){frameSeconds=0;frameSamples=0;slowWindows=fastWindows=0;}
   function sampleFrame(seconds){
-    if(Number($('quality-select').value)!==0||paused||document.hidden){resetFrameWindow();return;}
+    const adaptivePreset=Number($('quality-select').value);if((adaptivePreset!==0&&adaptivePreset!==5)||paused||document.hidden){resetFrameWindow();return;}
     if(!Number.isFinite(seconds)||seconds<=0||seconds>1)return;
     frameSeconds+=seconds;frameSamples++;
     if(frameSeconds<2||frameSamples<20)return;
     frameAverage=frameSeconds/frameSamples;frameSeconds=frameSamples=0;
-    slowWindows=frameAverage>.028?slowWindows+1:0;
-    fastWindows=frameAverage<.018?fastWindows+1:0;
-    const next=slowWindows>=2?Math.max(.65,autoScale-.1):fastWindows>=5?Math.min(1,autoScale+.05):autoScale;
+    // FLAGSHIP only steps down when the phone falls under ~25 fps, and never below 75% of native density.
+    const flagship=adaptivePreset===5;
+    slowWindows=frameAverage>(flagship?.04:.028)?slowWindows+1:0;
+    fastWindows=frameAverage<(flagship?.024:.018)?fastWindows+1:0;
+    const next=slowWindows>=2?Math.max(flagship?.75:.65,autoScale-.1):fastWindows>=5?Math.min(1,autoScale+.05):autoScale;
     if(next!==autoScale){autoScale=next;slowWindows=fastWindows=0;resize();}
   }
   function resize(){
     const w=Math.max(1,innerWidth),h=Math.max(1,innerHeight),preset=Number($('quality-select').value);
     const native=window.devicePixelRatio||1;
-    const requested=preset===0?autoScale:preset===4?3840/Math.max(w,h):preset===3?Math.max(2,native*1.25):preset===2?Math.max(1.5,native):1;
+    const requested=preset===5?Math.min(native,3)*autoScale:preset===0?autoScale:preset===4?3840/Math.max(w,h):preset===3?Math.max(2,native*1.25):preset===2?Math.max(1.5,native):1;
     // Limit total pixels as well as each dimension: safe for rotated phones and large displays.
     const gl=renderer.getContext();if(gl.isContextLost())return;
     const viewport=gl.getParameter(gl.MAX_VIEWPORT_DIMS);if(!viewport)return;
     const maxDim=Math.min(renderer.capabilities.maxTextureSize,gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),viewport[0],viewport[1]);
-    const budget=preset===0?1600000:preset===4?8294400:preset===3?6291456:4194304;
+    const budget=preset===5?4665600:preset===0?1600000:preset===4?8294400:preset===3?6291456:4194304;
     const ratio=Math.min(requested,Math.sqrt(budget/(w*h)),maxDim/w,maxDim/h);
     camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setPixelRatio(ratio);renderer.setSize(w,h);
     renderer.getDrawingBufferSize(renderSize);
+    if(postfx){postfx.enabled=preset===5;if(postfx.enabled)postfx.setSize(renderSize.x,renderSize.y);skyUniforms.uHdr.value=postfx.enabled?1:0;}
     $('resolution-label').textContent=`${renderSize.x} × ${renderSize.y}`;
-    $('quality-label').textContent={0:'PERFORMANCE',1:'STANDARD',2:'ULTRA',3:'EXTREME',4:'UHD'}[preset];
+    $('quality-label').textContent={0:'PERFORMANCE',1:'STANDARD',2:'ULTRA',3:'EXTREME',4:'UHD',5:'FLAGSHIP'}[preset];
+  }
+  const hdrSunColor=new T.Color();
+  /** Every production frame goes through here: HDR cinematic pipeline on FLAGSHIP, direct render otherwise. */
+  function renderFrame(dt){
+    if(postfx&&postfx.enabled){
+      const storm=skyUniforms.uStorm.value,warm=skyUniforms.uWarm.value/.75;
+      hdrSunColor.copy(sun.color).multiplyScalar(.55+warm*.25);
+      skyUniforms.uExposure.value=renderer.toneMappingExposure*(1-storm*.12);
+      postfx.render(scene,camera,{dt,sunDir:skyUniforms.uSun.value,sunColor:hdrSunColor,storm,warm,exposure:renderer.toneMappingExposure*(1-storm*.12),
+        bloom:.05+storm*.02,shafts:.62*(1-storm),haze:1+storm*.4,threshold:1.05,vignette:$('motion-toggle').checked?.12:.26,grain:$('motion-toggle').checked?0:.010});
+    }else renderer.render(scene,camera);
   }
   function applyWorldQuality(){
     const preset=Number($('quality-select').value),size=Math.min(preset===0?1024:preset===1?2048:4096,renderer.capabilities.maxTextureSize);
@@ -426,7 +458,6 @@
     }
     ctx.beginPath();ctx.setLineDash([3,7]);ctx.strokeStyle='#ede0a65e';landmarks.forEach((l,i)=>i?ctx.lineTo(mx(l.x),mz(l.z)):ctx.moveTo(mx(l.x),mz(l.z)));ctx.stroke();ctx.setLineDash([]);
     landmarks.forEach(l=>{const x=mx(l.x),z=mz(l.z);ctx.save();ctx.translate(x,z);ctx.rotate(Math.PI/4);ctx.fillStyle='#e6d39c';ctx.strokeStyle='#efdeaa';ctx.lineWidth=large?2:1.5;const size=large?6:4;if(discovered.has(l.id))ctx.fillRect(-size,-size,size*2,size*2);else ctx.strokeRect(-size,-size,size*2,size*2);ctx.restore();if(large)drawLabel(l.name,x,z,true);});
-    if(large)regions.forEach(r=>drawLabel(r.place,mx(r.x),mz(r.z),true));
     expansion.drawMap(ctx,mx,mz,large,drawLabel);
     ctx.save();ctx.translate(mx(state.x),mz(state.z));ctx.rotate(-state.yaw);ctx.fillStyle='#fff5d6';ctx.shadowBlur=10;ctx.shadowColor='#fcf3c3';ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(-5,6);ctx.lineTo(0,3);ctx.lineTo(5,6);ctx.closePath();ctx.fill();ctx.restore();ctx.restore();
     if(large)lastMapLabels=labels;
@@ -438,16 +469,16 @@
   let toastTimeout=0;function discover(l){discovered.add(l.id);l.glow.visible=false;$('discovery-name').textContent=l.name;$('discovery-toast').classList.add('show');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>$('discovery-toast').classList.remove('show'),6500);if(discovered.size===3){$('ambient-caption').textContent='すべての記憶を集めた。その先も、旅はつづく。';}save();}
   const markerVector=new T.Vector3();let uiTick=0,saveTick=0;
   function updateUI(dt){uiTick+=dt;saveTick+=dt;if(saveTick>8){save();saveTick=0;}if(uiTick<.12)return;uiTick=0;
-    landmarks.forEach(l=>{if(!discovered.has(l.id)&&Math.hypot(state.x-l.x,state.z-l.z)<l.r)discover(l);});
+    const nearGround=!expansion.airship?.aboard&&player.position.y-height(state.x,state.z)<8;landmarks.forEach(l=>{if(nearGround&&!discovered.has(l.id)&&Math.hypot(state.x-l.x,state.z-l.z)<l.r)discover(l);});
     const target=landmarks.find(l=>!discovered.has(l.id));
     $('quest-progress').textContent=`${discovered.size} / 3 の記憶`;
     if(target){const distance=Math.round(Math.hypot(target.x-state.x,target.z-state.z));$('quest-title').textContent=`${target.name}を見つける`;$('quest-distance').textContent=`${distance} m`;
-      markerVector.set(target.x,target.y+13,target.z).project(camera);const visible=markerVector.z<1&&markerVector.z>-1&&Math.abs(markerVector.x)<.94&&Math.abs(markerVector.y)<.9;
+      markerVector.set(target.x,target.y+13,target.z).project(camera);const visible=!expansion.airship?.interiorView&&markerVector.z<1&&markerVector.z>-1&&Math.abs(markerVector.x)<.94&&Math.abs(markerVector.y)<.9;
       $('landmark-marker').style.opacity=visible?'1':'0';$('landmark-marker').style.left=`${(markerVector.x*.5+.5)*innerWidth}px`;$('landmark-marker').style.top=`${(-markerVector.y*.5+.5)*innerHeight}px`;$('marker-label').textContent=target.name;$('marker-distance').textContent=distance+' m';
     }else{$('quest-title').textContent='草原の記憶をすべて見つけた';$('quest-distance').textContent='旅はつづく';$('landmark-marker').style.opacity=0;}
     const names=['N','NE','E','SE','S','SW','W','NW'];const heading=((Math.round(-state.yaw/(Math.PI/4))%8)+8)%8;$('compass-main').textContent=names[heading];$('compass-left').textContent=names[(heading+7)%8];$('compass-right').textContent=names[(heading+1)%8];
     document.querySelector('.region-label h2').textContent=biomeAt(state.x,state.z).name;
-    $('map-coordinates').textContent=`E ${Math.round(state.x).toString().padStart(4,'0')} · N ${Math.round(-state.z).toString().padStart(4,'0')}`;drawMap(mapCtx,280,280,false);
+    const coord=v=>{const n=Math.round(v);return (n<0?'-':'')+String(Math.abs(n)).padStart(4,'0');};$('map-coordinates').textContent=`E ${coord(state.x)} · N ${coord(-state.z)}`;drawMap(mapCtx,280,280,false);
   }
 
   // Small drifting seeds and distant birds bring the landscape to life.
@@ -457,17 +488,19 @@
   let contextLost=false;
   $('world').addEventListener('webglcontextlost',event=>{
     event.preventDefault();contextLost=true;paused=true;keys.clear();resetStick();expansion.pauseInputs();
-    document.querySelectorAll('dialog[open]').forEach(d=>d.close());
+    document.querySelectorAll('dialog[open]').forEach(d=>{if(d.id!=='defeat-dialog')d.close();});
     $('loading').style.display='none';$('error-message').hidden=false;
     $('error-message').querySelector('h2').textContent='描画が中断されました';
     $('error-message').querySelector('p').textContent='画面の復旧を待っています。戻らない場合は再読み込みしてください。保存済みの旅の記録は維持されます。';
   });
   $('world').addEventListener('webglcontextrestored',()=>{
-    contextLost=false;resize();applyWorldQuality();$('error-message').hidden=true;
-    paused=objectReview||!!document.querySelector('dialog[open]');
+    contextLost=false;if(postfx)postfx.dispose();resize();applyWorldQuality();$('error-message').hidden=true;
+    if(expansion.dead&&!$('defeat-dialog').open)$('defeat-dialog').showModal();
+    syncPause();
   });
   document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();resetStick();endLook();expansion.pauseInputs();}});
   sceneryClearance=expansion.sceneryClearance;
+  syncPause(); // Phones start behind the fullscreen gate; simulation waits until it is passed.
   plantGrass(state.x,state.z,true);
   applyWorldQuality();
   const objectViews=expansion.getObjectViews();let reviewView=null,reviewZoom=1;
@@ -498,7 +531,7 @@
     $('photo-prev').addEventListener('click',()=>next(-1));$('photo-next').addEventListener('click',()=>next(1));
     $('photo-quality').addEventListener('change',e=>{$('quality-select').value=e.target.value;$('quality-select').dispatchEvent(new Event('change'));updateGrass(grassCount);});
     $('photo-zoom').addEventListener('input',e=>reviewZoom=Number(e.target.value));
-    $('photo-save').addEventListener('click',()=>{reviewCamera();renderer.render(scene,camera);renderer.domElement.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='verdant-'+reviewView.id+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},'image/png');});
+    $('photo-save').addEventListener('click',()=>{reviewCamera();renderFrame(.016);renderer.domElement.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='verdant-'+reviewView.id+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},'image/png');});
     $('quality-select').value='1';resize();applyWorldQuality();
     setObjectView(new URLSearchParams(location.search).get('shot'))||setObjectView(objectViews[0].id);
   }
@@ -527,7 +560,7 @@
       limbs[0].rotation.x=Math.sin(state.walkTime)*.65*state.moving;limbs[1].rotation.x=-Math.sin(state.walkTime)*.65*state.moving;torso.rotation.z=Math.sin(state.walkTime)*.02*state.moving;
       const capePos=capeGeo.attributes.position;for(let i=0;i<capePos.count;i++){const free=1-(capeBase[i*3+1]+.57)/1.14;capePos.setZ(i,capeBase[i*3+2]+Math.sin(elapsed*3.7+capeBase[i*3]*4)*.08*free+state.moving*free*.12);}capePos.needsUpdate=true;
       scarfTail.rotation.x=Math.sin(elapsed*4)*.15+state.moving*.5;
-      const distance=innerWidth<innerHeight?12:10.8;const horizontal=distance*Math.cos(state.pitch);
+      state.pitch=clamp(state.pitch,-.3,.85);const distance=innerWidth<innerHeight?12:10.8;const horizontal=distance*Math.cos(state.pitch);
       camDesired.set(state.x+Math.sin(state.yaw)*horizontal,state.y+2.3+Math.sin(state.pitch)*distance+state.jump*.6,state.z+Math.cos(state.yaw)*horizontal);
       camDesired.y=Math.max(camDesired.y,height(camDesired.x,camDesired.z)+1.1);
       camera.position.lerp(camDesired,1-Math.exp(-dt*5.5));lookTarget.set(state.x,state.y+1.7+state.jump*.7,state.z);camera.lookAt(lookTarget);
@@ -545,13 +578,13 @@
     if(!paused&&!expansion.dead)updateUI(dt);
     shadowTick+=raw;if(shadowTick>=.1){renderer.shadowMap.needsUpdate=true;shadowTick=0;}
     reviewCamera();sky.position.copy(camera.position);
-    renderer.render(scene,camera);
+    renderFrame(raw);
     if(firstFrame){firstFrame=false;document.body.dataset.ready='true';$('loading').classList.add('done');setTimeout(()=>$('loading').style.display='none',1400);console.info('Verdant Wilds ready: terrain, 98000 wind-animated grass blades, 3 landmarks, touch and keyboard controls.');}
   }
   if(new URLSearchParams(location.search).get('airship')==='1'&&!objectReview)expansion.airship.board(true);
   animate();
   if(testing&&new URLSearchParams(location.search).get('review')==='boss')expansion.test.prepareBoss();
   // Diagnostics; state-mutating verification hooks exist only in selftest mode.
-  window.verdantWorld={expansion,world:{size:worldSize,bounds:worldBounds,areaRatio:worldAreaRatio,previousAreaMultiplier:7,regions:regions.map(({tint,...r})=>r),biomeAt,height},getState:()=>({position:{x:state.x,y:state.y,z:state.z},jump:state.jump,onGround:state.onGround,yaw:state.yaw,running:state.running,discovered:[...discovered],paused,grass:grassCount,graphics:{preset:Number($('quality-select').value),width:renderSize.x,height:renderSize.y,pixelRatio:renderer.getPixelRatio(),shadowSize:sun.shadow.mapSize.x,activeGrass:grass.count,grassTarget,grassPending,terrainTriangles:groundGeo.index.count/3,autoScale,frameAverageMs:frameAverage*1000,shadowEveryFrame:renderer.shadowMap.autoUpdate},scenery:expansion.getSceneryStats(),webgl:renderer.capabilities.isWebGL2?'WebGL2':'WebGL1',drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
-  if(testing)window.verdantWorld.test={sampleFrame,resetFrameWindow,setObjectView,mapLabels:()=>lastMapLabels.map(r=>({...r})),flushGrass:()=>updateGrass(grassCount),renderReview(){reviewCamera();sky.position.copy(camera.position);renderer.shadowMap.needsUpdate=true;renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');}};
+  window.verdantWorld={expansion,world:{size:worldSize,bounds:worldBounds,areaRatio:worldAreaRatio,previousAreaMultiplier:7,regions:regions.map(({tint,...r})=>r),biomeAt,height},getState:()=>({position:{x:state.x,y:state.y,z:state.z},jump:state.jump,onGround:state.onGround,yaw:state.yaw,running:state.running,discovered:[...discovered],paused,grass:grassCount,graphics:{preset:Number($('quality-select').value),width:renderSize.x,height:renderSize.y,pixelRatio:renderer.getPixelRatio(),shadowSize:sun.shadow.mapSize.x,activeGrass:grass.count,grassTarget,grassPending,terrainTriangles:groundGeo.index.count/3,autoScale,frameAverageMs:frameAverage*1000,postfx:postfx?postfx.info():null,shadowEveryFrame:renderer.shadowMap.autoUpdate},scenery:expansion.getSceneryStats(),webgl:renderer.capabilities.isWebGL2?'WebGL2':'WebGL1',drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles})};
+  if(testing)window.verdantWorld.test={sampleFrame,resetFrameWindow,setObjectView,mapLabels:()=>lastMapLabels.map(r=>({...r})),flushGrass:()=>updateGrass(grassCount),renderReview(){reviewCamera();sky.position.copy(camera.position);renderer.shadowMap.needsUpdate=true;renderFrame(.016);return renderer.domElement.toDataURL('image/png');}};
 })();

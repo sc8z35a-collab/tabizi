@@ -86,7 +86,14 @@
     assert(d.getElementById('resolution-label').textContent === `${canvas.width} × ${canvas.height}` && d.getElementById('quality-label').textContent === 'UHD', 'HUD reports the selected quality and actual resolution');
     assert(standard.shadowSize <= 2048 && extreme.shadowSize <= 4096, 'Shadow resolution respects the selected quality');
     assert(extreme.grassTarget===98000 && extreme.terrainTriangles===460800, 'High quality restores grass capacity and detailed terrain');
+    const flagship=setQuality(5);
+    if(flagship.postfx&&flagship.postfx.supported){
+      await frames(2);const fx=state().graphics.postfx;
+      assert(fx.enabled&&fx.width===canvas.width&&fx.height===canvas.height&&fx.bloomLevels===6&&fx.frames>0,'FLAGSHIP renders through the HDR pipeline at the real drawing-buffer size');
+      assert(d.getElementById('quality-label').textContent==='FLAGSHIP'&&flagship.shadowSize===Math.min(4096,flagship.shadowSize)&&flagship.grassTarget===98000,'FLAGSHIP keeps maximum shadows, grass and HUD reporting');
+    }
     setQuality(0);w.verdantWorld.test.flushGrass();
+    assert(!state().graphics.postfx||!state().graphics.postfx.enabled,'Leaving FLAGSHIP releases the HDR render targets');
     assert(state().graphics.activeGrass===30000 && !state().graphics.grassPending, 'Returning to Performance drains pending grass work safely');
     await closeDialog('settings-dialog');
     const sample=w.verdantWorld.test.sampleFrame;

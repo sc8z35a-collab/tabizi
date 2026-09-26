@@ -30,6 +30,8 @@ window.createAirship = function (ctx) {
   let entry = null, hatch = null, repairHeld=false, hazardClock=0, explosions=0;
   const previousGroundPosition=new T.Vector3(state.x,state.y,state.z);
   const materials = {};
+  // Internal heading is counter-clockwise (forward = -sin,-cos); compass bearings are clockwise from north.
+  const bearingOf=h=>((Math.round(-h*180/Math.PI)%360)+360)%360;
   function mat(name, color, metalness = 0, roughness = .6, extra = {}) {
     return materials[name] = new T.MeshStandardMaterial({color, metalness, roughness, ...extra});
   }
@@ -452,6 +454,7 @@ window.createAirship = function (ctx) {
   const debris=new T.InstancedMesh(debrisGeo,debrisMat,48);damageGroup.add(debris);debris.count=0;debris.frustumCulled=false;
   const fragments=[],fragmentDummy=new T.Object3D();
   function currentRoom(){if(local.y>upperDeckY-.15)return rooms[local.z<6?6:7];return rooms[local.z< -10?0:local.z< -1?1:local.x<0?(local.z<6?2:4):(local.z<6?3:5)];}
+  function nearby(){return mode!=='ground'||Math.hypot(state.x-ship.position.x,state.z-ship.position.z)<180;}
   function damageRoom(room,amount,cause){
     if(room.hp<=0)return;
     room.hp=Math.max(0,room.hp-amount);room.blast=.5;
@@ -464,8 +467,8 @@ window.createAirship = function (ctx) {
       // Closed bulkheads attenuate the pressure wave; damage never deletes the walkable deck.
       const protectedRoom=doors.some(d=>!d.open&&Math.hypot(d.x-room.x,d.z-room.z)<5);
       for(const other of rooms)if(other!==room&&Math.hypot(other.x-room.x,other.y-room.y,other.z-room.z)<8)other.hp=Math.max(1,other.hp-(protectedRoom?4:14));
-      ctx.playCue?.('hurt');ctx.notice(room.name+'で爆発！ '+cause+'。部屋で「修理」を長押ししてください',6);
-    }else ctx.notice(room.name+'：'+cause+' / 耐久 '+Math.round(room.hp)+'%',4);
+      if(nearby()){ctx.playCue?.('hurt');ctx.notice('飛行船 '+room.name+'で爆発！ '+cause+'。部屋で「修理」を長押ししてください',6);}
+    }else if(nearby())ctx.notice('飛行船 '+room.name+'：'+cause+' / 耐久 '+Math.round(room.hp)+'%',4);
   }
   function receiveLightning(index=Math.floor(Math.random()*rooms.length)){
     const r=rooms[index];if(!r)return null;
@@ -726,7 +729,7 @@ window.createAirship = function (ctx) {
     if(autopilot){
       navigation.heading=heading;navigation.altitude=clamp(Math.max(100,ship.position.y-height(ship.position.x,ship.position.z)),35,400);
       navigation.throttle=clamp(throttle||.55,.25,.8);navigation.avoiding=false;
-      $('airship-ap-heading').value=Math.round((heading*180/Math.PI%360+360)%360);$('airship-ap-alt').value=Math.round(navigation.altitude);
+      $('airship-ap-heading').value=bearingOf(heading);$('airship-ap-alt').value=Math.round(navigation.altitude);
     }
     ctx.notice(autopilot?'自動操縦 ON：針路・対地高度を保持。席を離れても継続。手動入力で解除':'自動操縦 OFF：手動操縦に切り替えました',6);
   }
@@ -781,7 +784,7 @@ window.createAirship = function (ctx) {
     $('airship-boost').setAttribute('aria-label','ブースト（長押し / Shift） 残量 '+Math.round(boostCharge*100)+'%'+(boostLocked?' 充電中':''));
     $('airship-deck').textContent=local.y>upperDeckY-.15?'2F':'1F';
     $('airship-vs').textContent=(verticalSpeed>=0?'+':'')+verticalSpeed.toFixed(1);
-    $('airship-heading').textContent=String((Math.round(heading*180/Math.PI)%360+360)%360).padStart(3,'0')+'°';
+    $('airship-heading').textContent=String(bearingOf(heading)).padStart(3,'0')+'°';
     $('airship-status').textContent=impact>1?'GROUND CONTACT / 接触を吸収':contact?'LANDED / 接地':autopilot?(navigation.limited?'AP LIMITED / 制御限界':navigation.avoiding?'AP / 境界回避':'AUTOPILOT / 自動操縦'):mode==='walk'?'UNATTENDED / 推力維持':'CRUISING / 飛行中';
     $('airship-room').textContent=getRoom();
     $('airship-help').textContent=mode==='pilot'?'左で旋回 · 推力バーで加減速 · 右で昇降':'左で歩く · 背景ドラッグで見渡す · 扉の近くで開閉';
@@ -832,7 +835,7 @@ window.createAirship = function (ctx) {
     $('airship-weather').addEventListener('click',gated(()=>ctx.openDialog('events-dialog')));
     $('airship-ultra').addEventListener('click',gated(()=>{const q=$('quality-select');q.value='2';q.dispatchEvent(new Event('change'));ctx.notice('Ultra 高精細描画。重い場合は設定から動作優先へ戻せます',5);}));
     for(const id of ['airship-ap-heading','airship-ap-alt'])$(id).addEventListener('keydown',e=>e.stopPropagation());
-    $('airship-ap-heading').addEventListener('change',e=>{const n=Number(e.target.value);if(Number.isFinite(n)){navigation.heading=clamp(n,0,359)*Math.PI/180;e.target.value=Math.round(navigation.heading*180/Math.PI);}});
+    $('airship-ap-heading').addEventListener('change',e=>{const n=Number(e.target.value);if(Number.isFinite(n)){const bearing=Math.round(clamp(n,0,359));navigation.heading=-bearing*Math.PI/180;navigation.avoiding=false;e.target.value=bearing;}});
     $('airship-ap-alt').addEventListener('change',e=>{const n=Number(e.target.value);if(Number.isFinite(n)){navigation.altitude=clamp(n,35,400);e.target.value=navigation.altitude;}});
     $('airship-launch').addEventListener('click',gated(launch));$('airship-seat').addEventListener('click',gated(interact));
     $('airship-view').addEventListener('click',gated(setView));$('airship-exit').addEventListener('click',gated(exit));
@@ -845,11 +848,11 @@ window.createAirship = function (ctx) {
     hold('airship-boost',v=>{boostHeld=v;if(!v)boosting=false;});
     hold('airship-up',v=>{if(mode==='walk'){if(v)jump();}else ascentHeld=v;});hold('airship-down',v=>descentHeld=v);
     window.addEventListener('blur',pauseInputs);document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseInputs();});
-    window.addEventListener('keydown',e=>{if(e.repeat||ctx.getPaused()||ctx.getDead()||mode==='ground'||e.target.matches('input,select'))return;if(e.code==='KeyV'){e.preventDefault();setView();}if(e.code==='KeyP'){e.preventDefault();engageAutopilot();}});
+    window.addEventListener('keydown',e=>{if(e.repeat||ctx.getPaused()||ctx.getDead()||mode==='ground'||e.target.matches?.('input,select,textarea'))return;if(e.code==='KeyV'){e.preventDefault();setView();}if(e.code==='KeyP'){e.preventDefault();engageAutopilot();}});
   }
   function pauseInputs(){boostHeld=false;boosting=false;ascentHeld=false;descentHeld=false;repairHeld=false;input={mx:0,mz:0,running:false};}
   createUI();place();syncUI();updateInstruments();
-  const api={get aboard(){return mode!=='ground';},get piloting(){return mode==='pilot';},get interiorView(){return mode!=='ground'&&!exterior;},board,canBoard,interact,exit,place,jump,pauseInputs,getState,receiveLightning,engageAutopilot,
+  const api={get aboard(){return mode!=='ground';},get nearby(){return nearby();},get piloting(){return mode==='pilot';},get interiorView(){return mode!=='ground'&&!exterior;},board,canBoard,interact,exit,place,jump,pauseInputs,getState,receiveLightning,engageAutopilot,
     sheltersRain(x,y,z){rainPoint.set(x,y,z).applyMatrix4(rainInverse);return Math.abs(rainPoint.x)<3.65&&Math.abs(rainPoint.z)<15.8&&rainPoint.y>-.8&&rainPoint.y<7;},
     setInput(value){input=value;},
     update(dt,paused){
