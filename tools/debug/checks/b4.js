@@ -1,0 +1,3 @@
+(async page => { await page.tap('#gate-start').catch(e=>0); await page.waitForTimeout(6000);
+  return page.evaluate(() => { const rect = id => { const e = document.querySelector(id); if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom), getComputedStyle(e).display]; };
+    return { paused: verdantWorld.getState().paused, resume: getComputedStyle(document.getElementById('fullscreen-resume')).display, board: rect('#airship-board'), vitals: rect('.vitals'), runes: rect('#memory-runes'), minimap: rect('.minimap'), tools: rect('.tools'), notice: rect('#action-notice'), rightHud: rect('.right-hud'), joystick: rect('#joystick') }; }); })
